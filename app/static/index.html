@@ -1,0 +1,227 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>80 in 8 Simulator</title>
+  <link rel="stylesheet" href="/static/styles.css">
+</head>
+<body>
+  <main class="shell">
+    <section id="start-screen" class="panel panel-wide">
+      <p class="eyebrow">Local assessment simulator</p>
+      <h1>80 in 8</h1>
+      <p class="intro">
+        A public-consensus approximation of a proprietary mental-math screen.
+        Assessment mode is typed-answer and calibrated to a harder user-observed profile by default.
+      </p>
+      <div class="rules">
+        <span>80 questions max</span>
+        <span>8 minutes</span>
+        <span>Typed answers by default</span>
+        <span>Score = correct - incorrect</span>
+      </div>
+      <div class="control-grid">
+        <fieldset class="control mode-control">
+          <span>Mode</span>
+          <div class="mode-selector" role="radiogroup" aria-label="Mode">
+            <label class="mode-option">
+              <input type="radio" name="mode" value="assessment" checked>
+              <span>Optiver</span>
+            </label>
+            <label class="mode-option">
+              <input type="radio" name="mode" value="training">
+              <span>Training</span>
+            </label>
+            <label class="mode-option">
+              <input type="radio" name="mode" value="zetamac">
+              <span>Zetamac</span>
+            </label>
+          </div>
+        </fieldset>
+        <label id="preset-control" class="control">
+          <span>Preset</span>
+          <select id="preset-select">
+            <option value="user_observed" selected>user_observed</option>
+            <option value="consensus">consensus</option>
+            <option value="training_easy">training_easy</option>
+            <option value="training_hard">training_hard</option>
+          </select>
+        </label>
+      </div>
+      <section id="zetamac-settings" class="zetamac-panel hidden">
+        <div class="control-grid">
+          <label class="control">
+            <span>Duration</span>
+            <select id="zetamac-duration">
+              <option value="30">30 seconds</option>
+              <option value="60">60 seconds</option>
+              <option value="120" selected>120 seconds</option>
+              <option value="300">300 seconds</option>
+              <option value="600">600 seconds</option>
+            </select>
+          </label>
+        </div>
+        <div class="zetamac-grid">
+          <div class="zetamac-row">
+            <label class="zetamac-toggle"><input id="zetamac-addition-enabled" type="checkbox" checked> Addition</label>
+            <div class="range-grid">
+              <input id="zetamac-addition-left-min" type="number" value="10">
+              <input id="zetamac-addition-left-max" type="number" value="99">
+              <input id="zetamac-addition-right-min" type="number" value="10">
+              <input id="zetamac-addition-right-max" type="number" value="99">
+            </div>
+          </div>
+          <div class="zetamac-row">
+            <label class="zetamac-toggle"><input id="zetamac-subtraction-enabled" type="checkbox" checked> Subtraction</label>
+            <div class="range-grid">
+              <input id="zetamac-subtraction-left-min" type="number" value="10">
+              <input id="zetamac-subtraction-left-max" type="number" value="99">
+              <input id="zetamac-subtraction-right-min" type="number" value="10">
+              <input id="zetamac-subtraction-right-max" type="number" value="99">
+            </div>
+          </div>
+          <div class="zetamac-row">
+            <label class="zetamac-toggle"><input id="zetamac-multiplication-enabled" type="checkbox" checked> Multiplication</label>
+            <div class="range-grid">
+              <input id="zetamac-multiplication-left-min" type="number" value="2">
+              <input id="zetamac-multiplication-left-max" type="number" value="12">
+              <input id="zetamac-multiplication-right-min" type="number" value="2">
+              <input id="zetamac-multiplication-right-max" type="number" value="12">
+            </div>
+          </div>
+          <div class="zetamac-row">
+            <label class="zetamac-toggle"><input id="zetamac-division-enabled" type="checkbox" checked> Division</label>
+            <div class="range-grid">
+              <input id="zetamac-division-left-min" type="number" value="2">
+              <input id="zetamac-division-left-max" type="number" value="12">
+              <input id="zetamac-division-right-min" type="number" value="2">
+              <input id="zetamac-division-right-max" type="number" value="12">
+            </div>
+          </div>
+        </div>
+      </section>
+      <button id="start-button" class="primary-button">Start</button>
+      <p class="small-note">
+        Multiple choice is preserved as optional training mode. Zetamac uses typed whole-number answers with its own duration and range settings.
+      </p>
+    </section>
+
+    <section id="game-screen" class="panel hidden">
+      <div class="run-meta">
+        <span id="mode-badge" class="mode-badge">assessment</span>
+        <span id="preset-badge" class="mode-badge muted-badge">user_observed</span>
+        <button id="exit-run-button" class="secondary-button exit-button" type="button">Exit Run</button>
+      </div>
+      <header class="status-bar">
+        <div>
+          <span class="status-label">Time</span>
+          <strong id="time-remaining">08:00</strong>
+        </div>
+        <div>
+          <span id="secondary-label" class="status-label">Question</span>
+          <strong id="secondary-value">1 / 80</strong>
+        </div>
+        <div>
+          <span class="status-label">Score</span>
+          <strong id="current-score">0</strong>
+        </div>
+      </header>
+
+      <div class="question-wrap">
+        <p id="prompt" class="prompt">17 + 28</p>
+        <form id="answer-form" class="answer-form hidden">
+          <input
+            id="answer-input"
+            class="answer-input"
+            type="text"
+            inputmode="decimal"
+            autocomplete="off"
+            autocapitalize="off"
+            spellcheck="false"
+            placeholder="Type answer"
+          >
+          <button id="submit-answer" class="primary-button submit-button" type="submit">Submit</button>
+        </form>
+        <div id="options" class="options-grid hidden"></div>
+      </div>
+
+      <footer id="typed-hint" class="hint-row hidden">
+        <span>Press Enter to submit.</span>
+      </footer>
+      <footer id="training-hint" class="hint-row hidden">
+        <span>Use keys 1-4 or click an option.</span>
+        <span>No backtracking. The next question appears immediately after submission.</span>
+      </footer>
+    </section>
+
+    <section id="results-screen" class="panel panel-wide hidden">
+      <p class="eyebrow">Run complete</p>
+      <h2>Results</h2>
+      <div id="summary-grid" class="summary-grid"></div>
+
+      <section class="results-block">
+        <h3>Diagnostics by family</h3>
+        <div class="table-wrap">
+          <table>
+            <thead>
+              <tr>
+                <th>Family</th>
+                <th>Shown</th>
+                <th>Score</th>
+                <th>Correct</th>
+                <th>Incorrect</th>
+                <th>Avg RT</th>
+              </tr>
+            </thead>
+            <tbody id="family-body"></tbody>
+          </table>
+        </div>
+      </section>
+
+      <section class="results-block">
+        <div class="results-header">
+          <h3>Leaderboard</h3>
+          <button id="restart-button" class="secondary-button">Start another run</button>
+        </div>
+        <div class="table-wrap">
+          <table>
+            <thead>
+              <tr>
+                <th>Time</th>
+                <th>Score</th>
+                <th>Correct</th>
+                <th>Accuracy</th>
+                <th>Avg RT</th>
+              </tr>
+            </thead>
+            <tbody id="leaderboard-body"></tbody>
+          </table>
+        </div>
+      </section>
+
+      <section class="results-block">
+        <h3>Question history</h3>
+        <div class="table-wrap history-wrap">
+          <table>
+            <thead>
+              <tr>
+                <th>#</th>
+                <th>Prompt</th>
+                <th>Family</th>
+                <th>Selected</th>
+                <th>Correct</th>
+                <th>Result</th>
+                <th>RT</th>
+              </tr>
+            </thead>
+            <tbody id="history-body"></tbody>
+          </table>
+        </div>
+      </section>
+    </section>
+  </main>
+
+  <script src="/static/app.js"></script>
+</body>
+</html>
