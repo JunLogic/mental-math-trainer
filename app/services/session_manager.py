@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import secrets
+import re
 from decimal import Decimal, InvalidOperation
 from datetime import datetime, timedelta, timezone
 from math import ceil
@@ -15,6 +16,9 @@ from app.services.storage import SQLiteStorage
 
 def utc_now() -> datetime:
     return datetime.now(timezone.utc)
+
+
+NUMERIC_ANSWER_PATTERN = re.compile(r"^[+-]?(?:\d+(?:\.\d*)?|\.\d+)$")
 
 
 class SessionManager:
@@ -67,6 +71,7 @@ class SessionManager:
         session_id: str,
         selected_option_index: Optional[int] = None,
         submitted_answer: Optional[str] = None,
+        question_number: Optional[int] = None,
     ) -> GameSession:
         with self.lock:
             session = self.sessions.get(session_id)
@@ -84,6 +89,12 @@ class SessionManager:
             if session.current_index >= session.total_questions:
                 self._finalize_session(session=session, now=now, reason="question_limit")
                 return session
+
+            current_question_number = session.current_index + 1
+            if question_number is not None and question_number != current_question_number:
+                if question_number < current_question_number:
+                    return session
+                raise ValueError("Question state is out of sync. Please try again.")
 
             current_question = session.questions[session.current_index]
             if current_question.presented_at is None:
@@ -132,18 +143,20 @@ class SessionManager:
 
         if session.mode == "training":
             if selected_option_index not in {0, 1, 2, 3}:
-                raise ValueError("selected_option_index must be between 0 and 3 for training mode.")
+                raise ValueError("selected_option_index must be between 0 and 3 for Practice Mode.")
             current_question.selected_option = selected_option_index
             current_question.submitted_answer = current_question.options[selected_option_index]
             return selected_option_index == current_question.correct_option_index
 
         if session.mode == "zetamac":
-            parsed_answer = parse_integer_answer(submitted_answer)
-            current_question.submitted_answer = submitted_answer.strip() if submitted_answer is not None else None
+            cleaned_answer = normalize_numeric_answer_text(submitted_answer)
+            parsed_answer = parse_integer_answer(cleaned_answer)
+            current_question.submitted_answer = cleaned_answer
             return parsed_answer == parse_integer_answer(current_question.correct_answer)
 
-        parsed_answer = parse_numeric_answer(submitted_answer)
-        current_question.submitted_answer = submitted_answer.strip() if submitted_answer is not None else None
+        cleaned_answer = normalize_numeric_answer_text(submitted_answer)
+        parsed_answer = parse_numeric_answer(cleaned_answer)
+        current_question.submitted_answer = cleaned_answer
         return parsed_answer == parse_numeric_answer(current_question.correct_answer)
 
     def finish_session(self, session_id: str, reason: str = "manual_finish") -> GameSession:
@@ -231,12 +244,7 @@ class SessionManager:
 
 
 def parse_numeric_answer(value: Optional[str]) -> Decimal:
-    if value is None:
-        raise ValueError("An answer is required in assessment mode.")
-
-    cleaned = value.strip().replace(",", "").replace("−", "-")
-    if not cleaned:
-        raise ValueError("An answer is required in assessment mode.")
+    cleaned = normalize_numeric_answer_text(value)
 
     try:
         return Decimal(cleaned)
@@ -249,3 +257,15 @@ def parse_integer_answer(value: Optional[str]) -> int:
     if parsed != parsed.to_integral_value():
         raise ValueError("Zetamac answers must be whole numbers.")
     return int(parsed)
+
+
+def normalize_numeric_answer_text(value: Optional[str]) -> str:
+    if value is None:
+        raise ValueError("An answer is required in typed-answer modes.")
+
+    cleaned = value.strip().replace(",", "").replace("−", "-")
+    if not cleaned:
+        raise ValueError("An answer is required in typed-answer modes.")
+    if not NUMERIC_ANSWER_PATTERN.fullmatch(cleaned):
+        raise ValueError("Answer must be a valid integer or decimal value.")
+    return cleaned

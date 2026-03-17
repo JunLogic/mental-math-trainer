@@ -1,1 +1,1 @@
-"""Optiver-style mental math simulator package."""
+"""Mental arithmetic speed trainer package."""

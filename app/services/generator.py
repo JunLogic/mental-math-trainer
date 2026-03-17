@@ -303,8 +303,11 @@ class QuestionGenerator:
 
         right = Decimal(self._random_int(profile["integer_divisor"]))
         result = Decimal(self._random_int(profile["integer_result"]))
-        if self.rng.random() < 0.55 and right < 10 and result < 10:
-            right += Decimal(self.rng.randint(2, 6))
+        if self.rng.random() < 0.68:
+            if right < 12:
+                right += Decimal(self.rng.randint(2, 6))
+            if result < 10:
+                result += Decimal(self.rng.randint(2, 5))
         return OperandSet(left=right * result, right=right, result=result, difficulty_tag="larger_division")
 
     def _build_question_context(
@@ -391,7 +394,7 @@ class QuestionGenerator:
         direct_variants: list[tuple[str, Decimal, str]],
         reversed_variants: list[tuple[str, Decimal, str]],
     ) -> tuple[str, Decimal, str]:
-        if self.rng.random() < 0.72:
+        if self.rng.random() < 0.82:
             return self.rng.choice(direct_variants)
         return self.rng.choice(reversed_variants)
 

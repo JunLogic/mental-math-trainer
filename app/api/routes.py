@@ -59,6 +59,7 @@ def answer_question(request: Request, payload: GameAnswerRequest) -> dict[str, o
             session_id=payload.session_id,
             selected_option_index=payload.selected_option_index,
             submitted_answer=payload.answer,
+            question_number=payload.question_number,
         )
     except KeyError as exc:
         raise HTTPException(status_code=404, detail=str(exc)) from exc

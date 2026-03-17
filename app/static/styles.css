@@ -287,7 +287,6 @@ h3 {
   background: var(--panel-2);
   color: var(--text);
   font-size: 0.8rem;
-  text-transform: lowercase;
 }
 
 .muted-badge {
@@ -332,6 +331,10 @@ h3 {
   margin: 0 auto;
 }
 
+.answer-form-compact {
+  grid-template-columns: 1fr;
+}
+
 .answer-input {
   min-height: 64px;
   padding: 0 18px;
@@ -348,6 +351,14 @@ h3 {
 
 .submit-button {
   min-width: 132px;
+}
+
+.status-message {
+  width: min(520px, 100%);
+  margin: 12px auto 0;
+  color: var(--danger);
+  font-size: 0.92rem;
+  text-align: center;
 }
 
 .options-grid {

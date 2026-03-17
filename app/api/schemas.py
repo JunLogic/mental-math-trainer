@@ -52,6 +52,7 @@ class GameStartRequest(BaseModel):
 
 class GameAnswerRequest(BaseModel):
     session_id: str
+    question_number: Optional[int] = Field(default=None, ge=1)
     selected_option_index: Optional[int] = Field(default=None, ge=0, le=3)
     answer: Optional[str] = None
 

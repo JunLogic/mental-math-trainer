@@ -5,7 +5,7 @@ import sqlite3
 from pathlib import Path
 from typing import Any
 
-from app.models.game import GameSession
+from app.models.game import GameSession, normalize_mode_name
 
 
 class SQLiteStorage:
@@ -54,6 +54,7 @@ class SQLiteStorage:
             )
             self._ensure_column(connection, "runs", "mode", "TEXT NOT NULL DEFAULT 'assessment'")
             self._ensure_column(connection, "runs", "duration_seconds", "INTEGER NOT NULL DEFAULT 480")
+            self._normalize_mode_values(connection)
             connection.commit()
 
     def save_run(self, session: GameSession) -> None:
@@ -90,7 +91,7 @@ class SQLiteStorage:
                     summary["stats"]["average_response_time_seconds"],
                     json.dumps(summary["settings"]),
                     summary["seed"],
-                    summary["mode"],
+                    summary["mode_label"],
                     summary["duration_seconds"],
                 ),
             )
@@ -98,7 +99,7 @@ class SQLiteStorage:
             question_rows = [
                 (
                     run_id,
-                    summary["mode"],
+                    summary["mode_label"],
                     index + 1,
                     question.prompt,
                     question.correct_answer,
@@ -168,7 +169,7 @@ class SQLiteStorage:
                 "accuracy": round(row["accuracy"], 4),
                 "accuracy_percent": round(row["accuracy"] * 100, 2),
                 "average_response_time_seconds": round(row["average_response_time"], 3),
-                "mode": row["mode"],
+                "mode": normalize_mode_name(row["mode"]),
                 "duration_seconds": row["duration_seconds"],
             }
             for row in rows
@@ -181,3 +182,12 @@ class SQLiteStorage:
         }
         if column_name not in columns:
             connection.execute(f"ALTER TABLE {table_name} ADD COLUMN {column_name} {column_sql}")
+
+    def _normalize_mode_values(self, connection: sqlite3.Connection) -> None:
+        for stored_value, normalized_value in (
+            ("assessment", "Interview Mode"),
+            ("training", "Practice Mode"),
+            ("zetamac", "Zetamac Mode"),
+        ):
+            connection.execute("UPDATE runs SET mode = ? WHERE mode = ?", (normalized_value, stored_value))
+            connection.execute("UPDATE run_questions SET mode = ? WHERE mode = ?", (normalized_value, stored_value))

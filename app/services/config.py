@@ -9,9 +9,15 @@ from typing import Any
 ROOT_DIR = Path(__file__).resolve().parents[2]
 DATA_DIR = ROOT_DIR / "data"
 DEFAULT_SETTINGS_PATH = DATA_DIR / "question_settings.json"
-DEFAULT_PRESET_NAME = "user_observed"
+DEFAULT_PRESET_NAME = "interview_default"
 DEFAULT_ZETAMAC_DURATION = 120
 ZETAMAC_ALLOWED_DURATIONS = {30, 60, 120, 300, 600}
+PRESET_ALIASES: dict[str, str] = {
+    "user_observed": "interview_default",
+    "consensus": "interview_balanced",
+    "training_easy": "practice_easy",
+    "training_hard": "practice_default",
+}
 
 EASY_DIFFICULTY: dict[str, Any] = {
     "label": "easy",
@@ -103,36 +109,44 @@ BALANCED_DIFFICULTY: dict[str, Any] = {
 HARD_DIFFICULTY: dict[str, Any] = {
     "label": "harder",
     "addition": {
-        "integer_left": [34, 188],
-        "integer_right": [18, 146],
-        "carry_bias": 0.68,
-        "decimal_left_tenths": [18, 196],
-        "decimal_right_tenths": [12, 158],
-        "decimal_carry_bias": 0.72,
+        "integer_left": [48, 248],
+        "integer_right": [24, 186],
+        "carry_bias": 0.78,
+        "decimal_left_tenths": [24, 228],
+        "decimal_right_tenths": [16, 184],
+        "decimal_carry_bias": 0.82,
     },
     "subtraction": {
-        "integer_right": [22, 136],
-        "integer_result": [16, 132],
-        "borrow_bias": 0.74,
-        "decimal_right_tenths": [18, 156],
-        "decimal_result_tenths": [12, 148],
-        "decimal_borrow_bias": 0.76,
+        "integer_right": [26, 188],
+        "integer_result": [24, 176],
+        "borrow_bias": 0.82,
+        "decimal_right_tenths": [18, 186],
+        "decimal_result_tenths": [14, 176],
+        "decimal_borrow_bias": 0.82,
     },
     "multiplication": {
-        "integer_left": [6, 17],
-        "integer_right": [7, 18],
-        "large_factor_bias": 0.52,
-        "decimal_integer_factor": [5, 18],
-        "decimal_factor_choices": ["0.7", "0.8", "1.2", "1.4", "1.5", "1.8", "2.4", "2.5", "3.6"],
-        "decimal_pair_choices": [["1.8", "2.5"], ["2.4", "1.5"], ["3.6", "2.5"], ["1.4", "3.5"], ["2.8", "1.5"]],
-        "pair_bias": 0.42,
+        "integer_left": [7, 19],
+        "integer_right": [8, 21],
+        "large_factor_bias": 0.7,
+        "decimal_integer_factor": [6, 19],
+        "decimal_factor_choices": ["0.6", "0.8", "1.2", "1.4", "1.5", "1.8", "2.4", "2.5", "3.5", "3.6", "4.2"],
+        "decimal_pair_choices": [
+            ["1.8", "2.5"],
+            ["2.4", "1.5"],
+            ["3.6", "2.5"],
+            ["1.4", "3.5"],
+            ["2.8", "1.5"],
+            ["4.2", "1.5"],
+            ["1.25", "2.4"],
+        ],
+        "pair_bias": 0.48,
     },
     "division": {
-        "integer_divisor": [5, 17],
-        "integer_result": [4, 19],
-        "decimal_int_result": [4, 14],
-        "decimal_divisor_choices": ["0.6", "0.8", "1.2", "1.4", "1.5", "1.8", "2.5", "2.7"],
-        "decimal_result_choices": ["1.2", "1.4", "1.8", "2.4", "3.4", "4.2", "5.6", "6.4", "7.5"],
+        "integer_divisor": [6, 18],
+        "integer_result": [6, 19],
+        "decimal_int_result": [5, 14],
+        "decimal_divisor_choices": ["0.6", "0.8", "1.2", "1.4", "1.5", "1.8", "2.1", "2.4", "2.5", "3.5"],
+        "decimal_result_choices": ["1.2", "1.4", "1.8", "2.4", "3.4", "4.2", "5.6", "6.4", "7.5", "8.4"],
         "decimal_pair_choices": [
             ["8.5", "2.5", "3.4"],
             ["12.6", "1.8", "7"],
@@ -141,57 +155,61 @@ HARD_DIFFICULTY: dict[str, Any] = {
             ["14.4", "0.8", "18"],
             ["18.9", "2.7", "7"],
             ["6.3", "1.5", "4.2"],
+            ["10.5", "2.5", "4.2"],
+            ["16.8", "2.4", "7"],
+            ["14.7", "2.1", "7"],
+            ["3.0", "1.25", "2.4"],
         ],
-        "pair_bias": 0.45,
+        "pair_bias": 0.52,
     },
 }
 
 PRESET_DEFINITIONS: dict[str, dict[str, Any]] = {
-    "consensus": {
+    "interview_balanced": {
         "mode": "assessment",
         "weights": {
-            "addition_weight": 30,
-            "subtraction_weight": 25,
-            "multiplication_weight": 20,
-            "division_weight": 10,
-            "decimal_weight": 10,
-            "missing_variable_weight": 5,
+            "addition_weight": 24,
+            "subtraction_weight": 22,
+            "multiplication_weight": 18,
+            "division_weight": 14,
+            "decimal_weight": 24,
+            "missing_variable_weight": 12,
         },
         "difficulty_profile": BALANCED_DIFFICULTY,
     },
-    "user_observed": {
+    "interview_default": {
         "mode": "assessment",
         "weights": {
-            "addition_weight": 18,
-            "subtraction_weight": 16,
-            "multiplication_weight": 14,
-            "division_weight": 12,
-            "decimal_weight": 35,
-            "missing_variable_weight": 20,
+            "addition_weight": 15,
+            "subtraction_weight": 17,
+            "multiplication_weight": 18,
+            "division_weight": 14,
+            "decimal_weight": 42,
+            "missing_variable_weight": 28,
         },
         "difficulty_profile": HARD_DIFFICULTY,
     },
-    "training_easy": {
+    "practice_easy": {
         "mode": "training",
         "weights": {
-            "addition_weight": 28,
+            "addition_weight": 26,
             "subtraction_weight": 24,
             "multiplication_weight": 18,
             "division_weight": 10,
-            "decimal_weight": 12,
-            "missing_variable_weight": 8,
+            "decimal_weight": 16,
+            "missing_variable_weight": 10,
         },
         "difficulty_profile": EASY_DIFFICULTY,
     },
-    "training_hard": {
+    "practice_default": {
         "mode": "training",
         "weights": {
-            "addition_weight": 20,
+            "addition_weight": 18,
             "subtraction_weight": 18,
             "multiplication_weight": 16,
-            "division_weight": 14,
-            "decimal_weight": 28,
-            "missing_variable_weight": 18,
+            "division_weight": 12,
+            "decimal_weight": 40,
+            "missing_variable_weight": 24,
         },
         "difficulty_profile": HARD_DIFFICULTY,
     },
@@ -223,6 +241,10 @@ def deep_merge_dicts(base: dict[str, Any], overrides: dict[str, Any]) -> dict[st
         else:
             merged[key] = value
     return merged
+
+
+def canonical_preset_name(preset_name: str) -> str:
+    return PRESET_ALIASES.get(preset_name, preset_name)
 
 
 def estimate_zetamac_question_budget(duration_seconds: int) -> int:
@@ -338,7 +360,9 @@ class GenerationSettings:
 
     @classmethod
     def from_dict(cls, values: dict[str, Any]) -> "GenerationSettings":
-        preset_name = str(values.get("preset_name", DEFAULT_PRESET_NAME))
+        preset_name = canonical_preset_name(str(values.get("preset_name", DEFAULT_PRESET_NAME)))
+        values = dict(values)
+        values["preset_name"] = preset_name
         if values.get("mode") == "zetamac" or preset_name == "zetamac":
             base = cls.for_zetamac()
         else:
@@ -352,6 +376,7 @@ class GenerationSettings:
 
     @classmethod
     def from_preset(cls, preset_name: str, mode: str | None = None) -> "GenerationSettings":
+        preset_name = canonical_preset_name(preset_name)
         if preset_name not in PRESET_DEFINITIONS:
             raise ValueError(f"Unknown preset: {preset_name}")
 

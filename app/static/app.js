@@ -1,8 +1,21 @@
 const MODE_LABELS = {
-  assessment: "Optiver",
-  training: "Training",
-  zetamac: "Zetamac",
+  assessment: "Interview Mode",
+  training: "Practice Mode",
+  zetamac: "Zetamac Mode",
 };
+const PRESET_OPTIONS = {
+  assessment: [
+    { value: "interview_default", label: "Interview Default" },
+    { value: "interview_balanced", label: "Interview Balanced" },
+  ],
+  training: [
+    { value: "practice_default", label: "Practice Default" },
+    { value: "practice_easy", label: "Practice Easy" },
+  ],
+};
+const PRESET_LABELS = Object.fromEntries(
+  Object.values(PRESET_OPTIONS).flat().map((preset) => [preset.value, preset.label]),
+);
 
 const state = {
   sessionId: null,
@@ -12,7 +25,7 @@ const state = {
   timerHandle: null,
   submitting: false,
   mode: "assessment",
-  presetName: "user_observed",
+  presetName: "interview_default",
   selectedMode: "assessment",
 };
 
@@ -39,10 +52,13 @@ const submitAnswerButton = document.getElementById("submit-answer");
 const optionsEl = document.getElementById("options");
 const typedHint = document.getElementById("typed-hint");
 const trainingHint = document.getElementById("training-hint");
+const typedHintText = document.getElementById("typed-hint-text");
 const summaryGrid = document.getElementById("summary-grid");
+const operationBody = document.getElementById("operation-body");
 const leaderboardBody = document.getElementById("leaderboard-body");
 const historyBody = document.getElementById("history-body");
 const familyBody = document.getElementById("family-body");
+const statusMessage = document.getElementById("status-message");
 
 const zetamacFields = {
   duration: document.getElementById("zetamac-duration"),
@@ -93,6 +109,51 @@ function showScreen(name) {
   resultsScreen.classList.toggle("hidden", name !== "results");
 }
 
+function setStatusMessage(message) {
+  statusMessage.textContent = message;
+  statusMessage.classList.toggle("hidden", !message);
+}
+
+function clearStatusMessage() {
+  setStatusMessage("");
+}
+
+function formatResponseSeconds(value) {
+  return `${Number(value || 0).toFixed(3).replace(/\.?0+$/, "")}s`;
+}
+
+function focusAnswerInput() {
+  if (gameScreen.classList.contains("hidden") || answerForm.classList.contains("hidden")) {
+    return;
+  }
+
+  window.requestAnimationFrame(() => {
+    if (!answerInput.disabled && !gameScreen.classList.contains("hidden")) {
+      answerInput.focus({ preventScroll: true });
+    }
+  });
+}
+
+function syncPresetOptions() {
+  const options = PRESET_OPTIONS[state.selectedMode] || PRESET_OPTIONS.assessment;
+  const nextValue = options.some((option) => option.value === presetSelect.value)
+    ? presetSelect.value
+    : options[0].value;
+
+  presetSelect.innerHTML = "";
+  options.forEach((option) => {
+    const optionEl = document.createElement("option");
+    optionEl.value = option.value;
+    optionEl.textContent = option.label;
+    presetSelect.appendChild(optionEl);
+  });
+  presetSelect.value = nextValue;
+}
+
+function presetLabel(presetName) {
+  return PRESET_LABELS[presetName] || presetName || "-";
+}
+
 function getSelectedMode() {
   const checked = modeInputs.find((input) => input.checked);
   return checked ? checked.value : "assessment";
@@ -110,12 +171,8 @@ function syncStartControls() {
   const isZetamac = state.selectedMode === "zetamac";
   presetControl.classList.toggle("hidden", isZetamac);
   zetamacSettingsPanel.classList.toggle("hidden", !isZetamac);
-
-  if (state.selectedMode === "training" && !presetSelect.value.startsWith("training")) {
-    presetSelect.value = "training_hard";
-  }
-  if (state.selectedMode === "assessment" && presetSelect.value.startsWith("training")) {
-    presetSelect.value = "user_observed";
+  if (!isZetamac) {
+    syncPresetOptions();
   }
 }
 
@@ -135,7 +192,13 @@ async function requestJson(url, options = {}) {
 }
 
 function reportError(error) {
-  window.alert(error.message || "Request failed.");
+  const message = error.message || "Request failed.";
+  if (!gameScreen.classList.contains("hidden")) {
+    setStatusMessage(message);
+    focusAnswerInput();
+    return;
+  }
+  window.alert(message);
 }
 
 function collectZetamacSettings() {
@@ -177,8 +240,7 @@ function collectZetamacSettings() {
 }
 
 function resetTransientState() {
-  clearInterval(state.timerHandle);
-  state.timerHandle = null;
+  stopTimer();
   state.sessionId = null;
   state.expiresAt = null;
   state.currentQuestion = null;
@@ -190,16 +252,17 @@ function resetTransientState() {
   promptEl.textContent = "17 + 28";
   answerInput.value = "";
   optionsEl.innerHTML = "";
+  clearStatusMessage();
 }
 
 function updateRunMeta(payload) {
   state.mode = payload.mode;
   state.presetName = payload.settings?.preset_name || state.presetName;
-  modeBadge.textContent = MODE_LABELS[state.mode] || state.mode;
+  modeBadge.textContent = payload.mode_label || MODE_LABELS[state.mode] || state.mode;
   if (state.mode === "zetamac") {
     presetBadge.textContent = `${payload.duration_seconds}s`;
   } else {
-    presetBadge.textContent = state.presetName;
+    presetBadge.textContent = presetLabel(state.presetName);
   }
 }
 
@@ -228,24 +291,43 @@ function setSubmitting(isSubmitting) {
   [...optionsEl.querySelectorAll("button")].forEach((button) => {
     button.disabled = isSubmitting;
   });
+  if (!isSubmitting) {
+    focusAnswerInput();
+  }
+}
+
+function stopTimer() {
+  clearInterval(state.timerHandle);
+  state.timerHandle = null;
+}
+
+async function tickTimer() {
+  if (!state.expiresAt) {
+    return;
+  }
+
+  const remaining = Math.max(
+    0,
+    Math.ceil((new Date(state.expiresAt).getTime() - Date.now()) / 1000),
+  );
+  timeRemaining.textContent = formatSeconds(remaining);
+  if (remaining <= 0) {
+    stopTimer();
+    await refreshSessionState().catch(() => {});
+  }
 }
 
 function startTimer(expiresAtIso) {
   state.expiresAt = expiresAtIso;
-  clearInterval(state.timerHandle);
-  const tick = async () => {
-    const remaining = Math.max(
-      0,
-      Math.ceil((new Date(state.expiresAt).getTime() - Date.now()) / 1000),
-    );
-    timeRemaining.textContent = formatSeconds(remaining);
-    if (remaining <= 0) {
-      clearInterval(state.timerHandle);
-      await refreshSessionState().catch(() => {});
-    }
-  };
-  tick();
-  state.timerHandle = window.setInterval(tick, 250);
+  if (state.timerHandle !== null) {
+    tickTimer().catch(() => {});
+    return;
+  }
+
+  tickTimer().catch(() => {});
+  state.timerHandle = window.setInterval(() => {
+    tickTimer().catch(() => {});
+  }, 250);
 }
 
 function renderOptions(question) {
@@ -255,6 +337,7 @@ function renderOptions(question) {
     button.className = "option-button";
     button.type = "button";
     button.textContent = `${index + 1}. ${optionText}`;
+    button.disabled = state.submitting;
     button.addEventListener("click", () => submitSessionAnswer({ selected_option_index: index }));
     optionsEl.appendChild(button);
   });
@@ -262,6 +345,7 @@ function renderOptions(question) {
 
 function renderQuestion(payload) {
   state.currentQuestion = payload.question;
+  clearStatusMessage();
   promptEl.textContent = payload.question.prompt;
   updateHeader(payload);
   updateRunMeta(payload);
@@ -276,31 +360,39 @@ function renderQuestion(payload) {
   }
 
   answerForm.classList.remove("hidden");
+  answerForm.classList.toggle("answer-form-compact", payload.mode === "zetamac");
   optionsEl.classList.add("hidden");
   optionsEl.innerHTML = "";
   answerInput.value = "";
-  answerInput.focus();
+  answerInput.inputMode = payload.mode === "zetamac" ? "numeric" : "decimal";
+  submitAnswerButton.classList.toggle("hidden", payload.mode === "zetamac");
+  typedHintText.textContent =
+    payload.mode === "zetamac"
+      ? "Press Enter to submit. The next problem appears immediately."
+      : "Press Enter to submit. The next question appears immediately.";
   typedHint.classList.remove("hidden");
   trainingHint.classList.add("hidden");
 }
 
 function summaryCards(summary) {
   const cards = [
-    ["Mode", MODE_LABELS[summary.mode] || summary.mode],
+    ["Mode", summary.mode_label || MODE_LABELS[summary.mode] || summary.mode],
     ["Final score", summary.score],
     ["Attempted", summary.stats.attempted],
     ["Correct", summary.stats.correct],
     ["Incorrect", summary.stats.incorrect],
     ["Unanswered", summary.stats.unanswered],
-    ["Avg response", `${summary.stats.average_response_time_seconds}s`],
-    ["Median response", `${summary.stats.median_response_time_seconds}s`],
+    ["Avg response", formatResponseSeconds(summary.stats.average_response_time_seconds)],
+    ["Median response", formatResponseSeconds(summary.stats.median_response_time_seconds)],
+    ["Fastest", formatResponseSeconds(summary.stats.fastest_response_time_seconds)],
+    ["Slowest", formatResponseSeconds(summary.stats.slowest_response_time_seconds)],
   ];
 
   if (summary.mode === "zetamac") {
     cards.push(["Duration", `${summary.duration_seconds}s`]);
     cards.push(["Operation mix", summary.operation_mix_used]);
   } else {
-    cards.push(["Preset", summary.settings?.preset_name || "-"]);
+    cards.push(["Preset", presetLabel(summary.settings?.preset_name)]);
     cards.push(["Accuracy", `${summary.stats.accuracy_percent}%`]);
     cards.push(["Decimal share", `${summary.diagnostics.decimal_share_percent}%`]);
     cards.push(["Missing share", `${summary.diagnostics.missing_variable_share_percent}%`]);
@@ -315,6 +407,20 @@ function summaryCards(summary) {
   });
 }
 
+function renderOperationDiagnostics(items = []) {
+  operationBody.innerHTML = "";
+  items.forEach((item) => {
+    const row = document.createElement("tr");
+    row.innerHTML = `
+      <td>${item.operation_label}</td>
+      <td>${item.attempted}</td>
+      <td>${item.accuracy_percent}%</td>
+      <td>${formatResponseSeconds(item.average_response_time_seconds)}</td>
+    `;
+    operationBody.appendChild(row);
+  });
+}
+
 function renderFamilyDiagnostics(items = []) {
   familyBody.innerHTML = "";
   items.forEach((item) => {
@@ -325,7 +431,7 @@ function renderFamilyDiagnostics(items = []) {
       <td>${item.score}</td>
       <td>${item.correct}</td>
       <td>${item.incorrect}</td>
-      <td>${item.average_response_time_seconds}s</td>
+      <td>${formatResponseSeconds(item.average_response_time_seconds)}</td>
     `;
     familyBody.appendChild(row);
   });
@@ -360,10 +466,11 @@ function renderLeaderboard(items = []) {
     const row = document.createElement("tr");
     row.innerHTML = `
       <td>${new Date(item.timestamp).toLocaleString()}</td>
+      <td>${item.mode}</td>
       <td>${item.score}</td>
-      <td>${item.raw_score}</td>
+      <td>${item.correct}</td>
       <td>${item.accuracy_percent}%</td>
-      <td>${item.average_response_time_seconds}s</td>
+      <td>${formatResponseSeconds(item.average_response_time_seconds)}</td>
     `;
     leaderboardBody.appendChild(row);
   });
@@ -377,6 +484,7 @@ async function loadLeaderboard() {
 async function startGame() {
   startButton.disabled = true;
   syncStartControls();
+  clearStatusMessage();
   try {
     const payload = await requestJson("/api/game/start", {
       method: "POST",
@@ -407,17 +515,19 @@ async function startGame() {
 }
 
 async function submitSessionAnswer(answerPayload) {
-  if (!state.sessionId || state.submitting) {
+  if (!state.sessionId || state.submitting || !state.currentQuestion) {
     return;
   }
 
   setSubmitting(true);
+  clearStatusMessage();
 
   try {
     const payload = await requestJson("/api/game/answer", {
       method: "POST",
       body: JSON.stringify({
         session_id: state.sessionId,
+        question_number: state.currentQuestion.question_number,
         ...answerPayload,
       }),
     });
@@ -430,7 +540,7 @@ async function submitSessionAnswer(answerPayload) {
 }
 
 async function refreshSessionState() {
-  if (!state.sessionId) {
+  if (!state.sessionId || state.submitting) {
     return;
   }
   const payload = await requestJson(`/api/game/state/${state.sessionId}`);
@@ -443,7 +553,7 @@ async function abortRun() {
   }
 
   const sessionId = state.sessionId;
-  clearInterval(state.timerHandle);
+  stopTimer();
   try {
     await requestJson("/api/game/abort", {
       method: "POST",
@@ -469,10 +579,11 @@ async function handleSessionPayload(payload) {
   timeRemaining.textContent = formatSeconds(payload.remaining_seconds ?? 0);
 
   if (payload.finished) {
-    clearInterval(state.timerHandle);
+    stopTimer();
     sessionStorage.removeItem("mental_math_session_id");
     showScreen("results");
     summaryCards(payload);
+    renderOperationDiagnostics(payload.diagnostics?.by_operation || []);
     renderFamilyDiagnostics(payload.diagnostics?.by_family || []);
     renderHistory(payload.history || []);
     await loadLeaderboard();
@@ -498,6 +609,7 @@ async function restoreSession() {
       sessionStorage.removeItem("mental_math_session_id");
       showScreen("results");
       summaryCards(payload);
+      renderOperationDiagnostics(payload.diagnostics?.by_operation || []);
       renderFamilyDiagnostics(payload.diagnostics?.by_family || []);
       renderHistory(payload.history || []);
       await loadLeaderboard();
@@ -513,10 +625,11 @@ async function restoreSession() {
 
 answerForm.addEventListener("submit", async (event) => {
   event.preventDefault();
-  if (!answerInput.value.trim()) {
+  const answer = answerInput.value.trim();
+  if (!answer) {
     return;
   }
-  await submitSessionAnswer({ answer: answerInput.value });
+  await submitSessionAnswer({ answer });
 });
 
 document.addEventListener("keydown", (event) => {
@@ -551,6 +664,7 @@ exitRunButton.addEventListener("click", () => {
 restartButton.addEventListener("click", async () => {
   resetTransientState();
   summaryGrid.innerHTML = "";
+  operationBody.innerHTML = "";
   familyBody.innerHTML = "";
   historyBody.innerHTML = "";
   showScreen("start");

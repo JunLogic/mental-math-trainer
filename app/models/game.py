@@ -7,6 +7,28 @@ from typing import Any, Literal
 
 BaseOperation = Literal["addition", "subtraction", "multiplication", "division"]
 QuestionResult = Literal["correct", "incorrect", "unanswered"]
+MODE_LABELS: dict[str, str] = {
+    "assessment": "Interview Mode",
+    "training": "Practice Mode",
+    "zetamac": "Zetamac Mode",
+    "Interview Mode": "Interview Mode",
+    "Practice Mode": "Practice Mode",
+    "Zetamac Mode": "Zetamac Mode",
+}
+OPERATION_LABELS: dict[BaseOperation, str] = {
+    "addition": "Addition",
+    "subtraction": "Subtraction",
+    "multiplication": "Multiplication",
+    "division": "Division",
+}
+
+
+def normalize_mode_name(mode: str) -> str:
+    return MODE_LABELS.get(mode, mode)
+
+
+def display_operation_name(operation: BaseOperation) -> str:
+    return OPERATION_LABELS.get(operation, operation.title())
 
 
 @dataclass
@@ -107,31 +129,42 @@ class GameSession:
             return 0.0
         return self.correct / self.attempted
 
-    def average_response_time_seconds(self) -> float:
-        response_times = [
+    def _attempted_response_times_seconds(self) -> list[float]:
+        return [
             question.response_time_ms / 1000
             for question in self.questions
             if question.response_time_ms is not None and question.result in {"correct", "incorrect"}
         ]
+
+    def average_response_time_seconds(self) -> float:
+        response_times = self._attempted_response_times_seconds()
         if not response_times:
             return 0.0
         return sum(response_times) / len(response_times)
 
     def median_response_time_seconds(self) -> float:
-        response_times = [
-            question.response_time_ms / 1000
-            for question in self.questions
-            if question.response_time_ms is not None and question.result in {"correct", "incorrect"}
-        ]
+        response_times = self._attempted_response_times_seconds()
         if not response_times:
             return 0.0
         return float(median(response_times))
+
+    def fastest_response_time_seconds(self) -> float:
+        response_times = self._attempted_response_times_seconds()
+        if not response_times:
+            return 0.0
+        return min(response_times)
+
+    def slowest_response_time_seconds(self) -> float:
+        response_times = self._attempted_response_times_seconds()
+        if not response_times:
+            return 0.0
+        return max(response_times)
 
     def operation_mix_used(self) -> str:
         if self.mode == "zetamac":
             operations = self.generation_settings.get("zetamac_settings", {}).get("operations", {})
             enabled = [name for name, enabled in operations.items() if enabled]
-            return ", ".join(enabled) if enabled else "none"
+            return ", ".join(display_operation_name(name) for name in enabled) if enabled else "None"
         return self.generation_settings.get("preset_name", "-")
 
     def diagnostics(self) -> dict[str, Any]:
@@ -140,6 +173,7 @@ class GameSession:
         decimal_count = sum(1 for question in shown_questions if question.used_decimal)
         missing_count = sum(1 for question in shown_questions if question.used_missing_variable)
         family_totals: dict[str, dict[str, Any]] = {}
+        operation_totals: dict[BaseOperation, dict[str, Any]] = {}
 
         for question in shown_questions:
             family_label = str(question.metadata.get("family_label") or question.base_operation)
@@ -171,6 +205,32 @@ class GameSession:
             if question.response_time_ms is not None and question.result in {"correct", "incorrect"}:
                 bucket["response_times"].append(question.response_time_ms / 1000)
 
+            operation_bucket = operation_totals.setdefault(
+                question.base_operation,
+                {
+                    "operation": question.base_operation,
+                    "operation_label": display_operation_name(question.base_operation),
+                    "shown": 0,
+                    "attempted": 0,
+                    "correct": 0,
+                    "incorrect": 0,
+                    "unanswered": 0,
+                    "response_times": [],
+                },
+            )
+            operation_bucket["shown"] += 1
+            if question.result == "correct":
+                operation_bucket["attempted"] += 1
+                operation_bucket["correct"] += 1
+            elif question.result == "incorrect":
+                operation_bucket["attempted"] += 1
+                operation_bucket["incorrect"] += 1
+            elif question.result == "unanswered":
+                operation_bucket["unanswered"] += 1
+
+            if question.response_time_ms is not None and question.result in {"correct", "incorrect"}:
+                operation_bucket["response_times"].append(question.response_time_ms / 1000)
+
         by_family = []
         for family_label in sorted(family_totals):
             bucket = family_totals[family_label]
@@ -180,6 +240,20 @@ class GameSession:
             )
             by_family.append(bucket)
 
+        by_operation = []
+        for operation_name in ("addition", "subtraction", "multiplication", "division"):
+            if operation_name not in operation_totals:
+                continue
+            bucket = operation_totals[operation_name]
+            response_times = bucket.pop("response_times")
+            accuracy = (bucket["correct"] / bucket["attempted"]) if bucket["attempted"] else 0.0
+            bucket["accuracy"] = round(accuracy, 4)
+            bucket["accuracy_percent"] = round(accuracy * 100, 2)
+            bucket["average_response_time_seconds"] = (
+                round(sum(response_times) / len(response_times), 3) if response_times else 0.0
+            )
+            by_operation.append(bucket)
+
         return {
             "decimal_questions": decimal_count,
             "decimal_share": round(decimal_count / total_shown, 4) if total_shown else 0.0,
@@ -187,6 +261,7 @@ class GameSession:
             "missing_variable_questions": missing_count,
             "missing_variable_share": round(missing_count / total_shown, 4) if total_shown else 0.0,
             "missing_variable_share_percent": round((missing_count / total_shown) * 100, 2) if total_shown else 0.0,
+            "by_operation": by_operation,
             "by_family": by_family,
         }
 
@@ -195,6 +270,7 @@ class GameSession:
             "session_id": self.session_id,
             "seed": self.seed,
             "mode": self.mode,
+            "mode_label": normalize_mode_name(self.mode),
             "created_at": self.created_at.isoformat(),
             "started_at": self.started_at.isoformat(),
             "expires_at": self.expires_at.isoformat(),
@@ -216,6 +292,8 @@ class GameSession:
                 "accuracy_percent": round(self.accuracy() * 100, 2),
                 "average_response_time_seconds": round(self.average_response_time_seconds(), 3),
                 "median_response_time_seconds": round(self.median_response_time_seconds(), 3),
+                "fastest_response_time_seconds": round(self.fastest_response_time_seconds(), 3),
+                "slowest_response_time_seconds": round(self.slowest_response_time_seconds(), 3),
             },
             "diagnostics": self.diagnostics(),
             "settings": self.generation_settings,

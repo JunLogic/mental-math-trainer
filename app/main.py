@@ -26,8 +26,8 @@ async def lifespan(app: FastAPI):
 
 
 app = FastAPI(
-    title="80 in 8 Simulator",
-    description="Local mental-math assessment simulator inspired by public reports of Optiver's 80 in 8 screen.",
+    title="Mental Arithmetic Speed Trainer",
+    description="Local arithmetic speed trainer with interview-style, practice, and Zetamac-inspired modes.",
     lifespan=lifespan,
 )
 app.include_router(router)
