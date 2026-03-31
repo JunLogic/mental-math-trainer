@@ -10,6 +10,8 @@ It includes three modes:
 
 The app is keyboard-first, keeps timing per question, stores completed runs in SQLite, and now shows lightweight timing analytics after each run.
 
+Adaptive Difficulty is also available as an optional training feature. When enabled, it adjusts question difficulty during a run based on recent response time and accuracy. When disabled, the app keeps the existing fixed preset behavior. It is presented as a local training aid, not as a claim about any external proprietary test format.
+
 ## Run locally
 
 Mac / Linux:
@@ -104,6 +106,8 @@ After each run, the results screen shows:
 - average response time by operation
 - accuracy by operation
 - question-level history with response times
+
+When Adaptive Difficulty is enabled, the results screen also shows the target pace plus initial, final, peak, and average difficulty for that run.
 
 Completed runs are stored in SQLite at `data/leaderboard.db`.
 

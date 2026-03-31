@@ -12,6 +12,11 @@ DEFAULT_SETTINGS_PATH = DATA_DIR / "question_settings.json"
 DEFAULT_PRESET_NAME = "interview_default"
 DEFAULT_ZETAMAC_DURATION = 120
 ZETAMAC_ALLOWED_DURATIONS = {30, 60, 120, 300, 600}
+ADAPTIVE_TARGET_PACE_PRESETS = (2.0, 2.5, 3.0)
+ADAPTIVE_MIN_TARGET_PACE = 2.0
+ADAPTIVE_MAX_TARGET_PACE = 6.0
+DEFAULT_ADAPTIVE_TARGET_PACE = 2.0
+DEFAULT_ADAPTIVE_INITIAL_DIFFICULTY = 40.0
 PRESET_ALIASES: dict[str, str] = {
     "user_observed": "interview_default",
     "consensus": "interview_balanced",
@@ -109,26 +114,48 @@ BALANCED_DIFFICULTY: dict[str, Any] = {
 HARD_DIFFICULTY: dict[str, Any] = {
     "label": "harder",
     "addition": {
-        "integer_left": [48, 248],
-        "integer_right": [24, 186],
-        "carry_bias": 0.78,
-        "decimal_left_tenths": [24, 228],
-        "decimal_right_tenths": [16, 184],
-        "decimal_carry_bias": 0.82,
+        "integer_left": [72, 428],
+        "integer_right": [34, 286],
+        "carry_bias": 0.9,
+        "multi_carry_bias": 0.44,
+        "decimal_left_tenths": [28, 268],
+        "decimal_right_tenths": [18, 218],
+        "decimal_carry_bias": 0.86,
     },
     "subtraction": {
-        "integer_right": [26, 188],
-        "integer_result": [24, 176],
-        "borrow_bias": 0.82,
-        "decimal_right_tenths": [18, 186],
-        "decimal_result_tenths": [14, 176],
-        "decimal_borrow_bias": 0.82,
+        "integer_right": [34, 268],
+        "integer_result": [28, 248],
+        "borrow_bias": 0.9,
+        "chain_borrow_bias": 0.38,
+        "across_zero_bias": 0.24,
+        "decimal_right_tenths": [22, 208],
+        "decimal_result_tenths": [16, 198],
+        "decimal_borrow_bias": 0.86,
     },
     "multiplication": {
-        "integer_left": [7, 19],
-        "integer_right": [8, 21],
-        "large_factor_bias": 0.7,
-        "decimal_integer_factor": [6, 19],
+        "integer_left": [8, 29],
+        "integer_right": [9, 31],
+        "large_factor_bias": 0.88,
+        "two_digit_pair_bias": 0.72,
+        "hard_pair_bias": 0.5,
+        "integer_pair_choices": [
+            [17, 14],
+            [18, 16],
+            [19, 17],
+            [21, 14],
+            [22, 13],
+            [23, 17],
+            [24, 16],
+            [24, 18],
+            [25, 17],
+            [26, 14],
+            [27, 16],
+            [28, 13],
+            [19, 18],
+            [21, 17],
+            [24, 25],
+        ],
+        "decimal_integer_factor": [7, 22],
         "decimal_factor_choices": ["0.6", "0.8", "1.2", "1.4", "1.5", "1.8", "2.4", "2.5", "3.5", "3.6", "4.2"],
         "decimal_pair_choices": [
             ["1.8", "2.5"],
@@ -142,9 +169,24 @@ HARD_DIFFICULTY: dict[str, Any] = {
         "pair_bias": 0.48,
     },
     "division": {
-        "integer_divisor": [6, 18],
-        "integer_result": [6, 19],
-        "decimal_int_result": [5, 14],
+        "integer_divisor": [7, 24],
+        "integer_result": [8, 26],
+        "integer_pair_bias": 0.48,
+        "integer_pair_choices": [
+            ["252", "14", "18"],
+            ["272", "16", "17"],
+            ["276", "12", "23"],
+            ["286", "13", "22"],
+            ["288", "16", "18"],
+            ["323", "17", "19"],
+            ["336", "14", "24"],
+            ["391", "17", "23"],
+            ["399", "19", "21"],
+            ["408", "17", "24"],
+            ["425", "17", "25"],
+            ["432", "24", "18"],
+        ],
+        "decimal_int_result": [6, 16],
         "decimal_divisor_choices": ["0.6", "0.8", "1.2", "1.4", "1.5", "1.8", "2.1", "2.4", "2.5", "3.5"],
         "decimal_result_choices": ["1.2", "1.4", "1.8", "2.4", "3.4", "4.2", "5.6", "6.4", "7.5", "8.4"],
         "decimal_pair_choices": [
@@ -180,10 +222,10 @@ PRESET_DEFINITIONS: dict[str, dict[str, Any]] = {
     "interview_default": {
         "mode": "assessment",
         "weights": {
-            "addition_weight": 15,
-            "subtraction_weight": 17,
-            "multiplication_weight": 18,
-            "division_weight": 14,
+            "addition_weight": 14,
+            "subtraction_weight": 16,
+            "multiplication_weight": 22,
+            "division_weight": 18,
             "decimal_weight": 42,
             "missing_variable_weight": 28,
         },
@@ -247,6 +289,43 @@ def canonical_preset_name(preset_name: str) -> str:
     return PRESET_ALIASES.get(preset_name, preset_name)
 
 
+def clamp(value: float, minimum: float, maximum: float) -> float:
+    return max(minimum, min(maximum, value))
+
+
+def _interpolate_number(low: int | float, high: int | float, t: float) -> int | float:
+    interpolated = low + (high - low) * t
+    if isinstance(low, int) and isinstance(high, int):
+        return int(round(interpolated))
+    return round(float(interpolated), 4)
+
+
+def _interpolate_profile_value(low: Any, high: Any, t: float) -> Any:
+    if isinstance(low, dict) and isinstance(high, dict):
+        return {
+            key: _interpolate_profile_value(low[key], high[key], t)
+            for key in low
+        }
+    if isinstance(low, list) and isinstance(high, list):
+        if len(low) == len(high) == 2 and all(isinstance(item, (int, float)) for item in low + high):
+            return [_interpolate_number(low[0], high[0], t), _interpolate_number(low[1], high[1], t)]
+        return copy.deepcopy(low if t < 0.5 else high)
+    if isinstance(low, (int, float)) and isinstance(high, (int, float)):
+        return _interpolate_number(low, high, t)
+    return copy.deepcopy(low if t < 0.5 else high)
+
+
+def difficulty_profile_for_scalar(difficulty: float) -> dict[str, Any]:
+    normalized_difficulty = clamp(float(difficulty), 0.0, 100.0)
+    if normalized_difficulty <= 50:
+        low_profile, high_profile = EASY_DIFFICULTY, BALANCED_DIFFICULTY
+        blend = normalized_difficulty / 50
+    else:
+        low_profile, high_profile = BALANCED_DIFFICULTY, HARD_DIFFICULTY
+        blend = (normalized_difficulty - 50) / 50
+    return _interpolate_profile_value(low_profile, high_profile, blend)
+
+
 def estimate_zetamac_question_budget(duration_seconds: int) -> int:
     return max(120, duration_seconds * 3)
 
@@ -296,6 +375,9 @@ class GenerationSettings:
     duration_seconds: int = 480
     difficulty_profile: dict[str, Any] = field(default_factory=lambda: copy.deepcopy(HARD_DIFFICULTY))
     zetamac_settings: dict[str, Any] = field(default_factory=lambda: copy.deepcopy(DEFAULT_ZETAMAC_SETTINGS))
+    adaptive_enabled: bool = False
+    target_pace_seconds: float = DEFAULT_ADAPTIVE_TARGET_PACE
+    initial_difficulty: float = DEFAULT_ADAPTIVE_INITIAL_DIFFICULTY
 
     def validate(self) -> None:
         weights = [
@@ -330,6 +412,13 @@ class GenerationSettings:
             raise ValueError("duration_seconds must be positive.")
         if not self.difficulty_profile:
             raise ValueError("difficulty_profile must be provided.")
+        self.target_pace_seconds = float(self.target_pace_seconds)
+        if not ADAPTIVE_MIN_TARGET_PACE <= self.target_pace_seconds <= ADAPTIVE_MAX_TARGET_PACE:
+            raise ValueError(
+                f"target_pace_seconds must be between {ADAPTIVE_MIN_TARGET_PACE:.1f} and {ADAPTIVE_MAX_TARGET_PACE:.1f}."
+            )
+        self.initial_difficulty = clamp(float(self.initial_difficulty), 0.0, 100.0)
+        self.adaptive_enabled = bool(self.adaptive_enabled)
         self.zetamac_settings = validate_zetamac_settings(self.zetamac_settings)
         if self.mode == "zetamac":
             self.duration_seconds = self.zetamac_settings["duration_seconds"]

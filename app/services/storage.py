@@ -6,6 +6,10 @@ from pathlib import Path
 from typing import Any
 
 from app.models.game import GameSession, normalize_mode_name
+from app.services.feature_extraction import (
+    extract_core_saved_question_feature_rows,
+    extract_saved_question_feature_rows,
+)
 
 
 class SQLiteStorage:
@@ -46,7 +50,20 @@ class SQLiteStorage:
                     correct_answer TEXT NOT NULL,
                     submitted_answer TEXT,
                     correct_flag INTEGER NOT NULL,
+                    result_label TEXT,
                     response_time_ms INTEGER,
+                    base_operation TEXT,
+                    used_decimal INTEGER NOT NULL DEFAULT 0,
+                    used_missing_variable INTEGER NOT NULL DEFAULT 0,
+                    left_value TEXT,
+                    right_value TEXT,
+                    result_value TEXT,
+                    answer_role TEXT,
+                    family_label TEXT,
+                    difficulty_tag TEXT,
+                    difficulty_at_question REAL,
+                    selected_option_index INTEGER,
+                    correct_option_index INTEGER,
                     operation_type TEXT NOT NULL,
                     FOREIGN KEY(run_id) REFERENCES runs(id)
                 )
@@ -54,6 +71,20 @@ class SQLiteStorage:
             )
             self._ensure_column(connection, "runs", "mode", "TEXT NOT NULL DEFAULT 'assessment'")
             self._ensure_column(connection, "runs", "duration_seconds", "INTEGER NOT NULL DEFAULT 480")
+            self._ensure_column(connection, "run_questions", "result_label", "TEXT")
+            self._ensure_column(connection, "run_questions", "base_operation", "TEXT")
+            self._ensure_column(connection, "run_questions", "used_decimal", "INTEGER NOT NULL DEFAULT 0")
+            self._ensure_column(connection, "run_questions", "used_missing_variable", "INTEGER NOT NULL DEFAULT 0")
+            self._ensure_column(connection, "run_questions", "left_value", "TEXT")
+            self._ensure_column(connection, "run_questions", "right_value", "TEXT")
+            self._ensure_column(connection, "run_questions", "result_value", "TEXT")
+            self._ensure_column(connection, "run_questions", "answer_role", "TEXT")
+            self._ensure_column(connection, "run_questions", "family_label", "TEXT")
+            self._ensure_column(connection, "run_questions", "difficulty_tag", "TEXT")
+            self._ensure_column(connection, "run_questions", "difficulty_at_question", "REAL")
+            self._ensure_column(connection, "run_questions", "selected_option_index", "INTEGER")
+            self._ensure_column(connection, "run_questions", "correct_option_index", "INTEGER")
+            self._backfill_base_operation(connection)
             self._normalize_mode_values(connection)
             connection.commit()
 
@@ -97,16 +128,10 @@ class SQLiteStorage:
             )
             run_id = int(cursor.lastrowid)
             question_rows = [
-                (
-                    run_id,
-                    summary["mode_label"],
-                    index + 1,
-                    question.prompt,
-                    question.correct_answer,
-                    question.submitted_answer,
-                    1 if question.result == "correct" else 0,
-                    question.response_time_ms,
-                    question.base_operation,
+                question.to_storage_row(
+                    run_id=run_id,
+                    mode_label=summary["mode_label"],
+                    question_index=index + 1,
                 )
                 for index, question in enumerate(session.questions)
                 if question.presented_at is not None
@@ -122,10 +147,23 @@ class SQLiteStorage:
                         correct_answer,
                         submitted_answer,
                         correct_flag,
+                        result_label,
                         response_time_ms,
+                        base_operation,
+                        used_decimal,
+                        used_missing_variable,
+                        left_value,
+                        right_value,
+                        result_value,
+                        answer_role,
+                        family_label,
+                        difficulty_tag,
+                        difficulty_at_question,
+                        selected_option_index,
+                        correct_option_index,
                         operation_type
                     )
-                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                     """,
                     question_rows,
                 )
@@ -175,6 +213,87 @@ class SQLiteStorage:
             for row in rows
         ]
 
+    def list_saved_run_ids(self) -> list[int]:
+        with sqlite3.connect(self.database_path) as connection:
+            rows = connection.execute(
+                """
+                SELECT id
+                FROM runs
+                ORDER BY id ASC
+                """
+            ).fetchall()
+        return [int(row[0]) for row in rows]
+
+    def list_saved_questions(self, run_id: int) -> list[dict[str, Any]]:
+        with sqlite3.connect(self.database_path) as connection:
+            connection.row_factory = sqlite3.Row
+            rows = connection.execute(
+                """
+                SELECT
+                    id,
+                    run_id,
+                    mode,
+                    question_index,
+                    prompt,
+                    correct_answer,
+                    submitted_answer,
+                    correct_flag,
+                    result_label,
+                    response_time_ms,
+                    base_operation,
+                    used_decimal,
+                    used_missing_variable,
+                    left_value,
+                    right_value,
+                    result_value,
+                    answer_role,
+                    family_label,
+                    difficulty_tag,
+                    difficulty_at_question,
+                    selected_option_index,
+                    correct_option_index,
+                    operation_type
+                FROM run_questions
+                WHERE run_id = ?
+                ORDER BY question_index ASC
+                """,
+                (run_id,),
+            ).fetchall()
+
+        return [
+            {
+                "id": row["id"],
+                "run_id": row["run_id"],
+                "mode": normalize_mode_name(row["mode"]),
+                "question_index": row["question_index"],
+                "prompt": row["prompt"],
+                "correct_answer": row["correct_answer"],
+                "submitted_answer": row["submitted_answer"],
+                "correct_flag": row["correct_flag"],
+                "result_label": row["result_label"],
+                "response_time_ms": row["response_time_ms"],
+                "base_operation": row["base_operation"] or row["operation_type"],
+                "used_decimal": bool(row["used_decimal"]),
+                "used_missing_variable": bool(row["used_missing_variable"]),
+                "left": row["left_value"],
+                "right": row["right_value"],
+                "result": row["result_value"],
+                "answer_role": row["answer_role"],
+                "family_label": row["family_label"],
+                "difficulty_tag": row["difficulty_tag"],
+                "difficulty_at_question": row["difficulty_at_question"],
+                "selected_option_index": row["selected_option_index"],
+                "correct_option_index": row["correct_option_index"],
+            }
+            for row in rows
+        ]
+
+    def build_saved_question_features(self, run_id: int) -> list[dict[str, Any]]:
+        return extract_saved_question_feature_rows(self.list_saved_questions(run_id))
+
+    def build_saved_question_core_features(self, run_id: int) -> list[dict[str, Any]]:
+        return extract_core_saved_question_feature_rows(self.list_saved_questions(run_id))
+
     def _ensure_column(self, connection: sqlite3.Connection, table_name: str, column_name: str, column_sql: str) -> None:
         columns = {
             row[1]
@@ -191,3 +310,13 @@ class SQLiteStorage:
         ):
             connection.execute("UPDATE runs SET mode = ? WHERE mode = ?", (normalized_value, stored_value))
             connection.execute("UPDATE run_questions SET mode = ? WHERE mode = ?", (normalized_value, stored_value))
+
+    def _backfill_base_operation(self, connection: sqlite3.Connection) -> None:
+        connection.execute(
+            """
+            UPDATE run_questions
+            SET base_operation = operation_type
+            WHERE (base_operation IS NULL OR base_operation = '')
+              AND operation_type IS NOT NULL
+            """
+        )

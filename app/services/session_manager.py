@@ -5,11 +5,12 @@ import re
 from decimal import Decimal, InvalidOperation
 from datetime import datetime, timedelta, timezone
 from math import ceil
+from statistics import median
 from threading import Lock
 from typing import Optional
 
 from app.models.game import GameSession
-from app.services.config import GenerationSettings
+from app.services.config import GenerationSettings, clamp
 from app.services.generator import QuestionGenerator
 from app.services.storage import SQLiteStorage
 
@@ -32,7 +33,18 @@ class SessionManager:
         seed = secrets.randbelow(1_000_000_000)
         session_id = secrets.token_urlsafe(12)
         generator = QuestionGenerator(settings=settings, seed=seed)
-        questions = generator.generate_run()
+        adaptive_difficulty = settings.initial_difficulty if settings.adaptive_enabled else None
+        if settings.adaptive_enabled:
+            seen_prompts: set[str] = set()
+            questions = [
+                generator.generate_question(
+                    adaptive_difficulty=adaptive_difficulty,
+                    seen_prompts=seen_prompts,
+                )
+            ]
+        else:
+            questions = generator.generate_run()
+            seen_prompts = {question.prompt for question in questions}
         questions[0].presented_at = now
 
         session = GameSession(
@@ -51,6 +63,10 @@ class SessionManager:
             attempted=0,
             questions=questions,
             generation_settings=settings.to_dict(),
+            generator=generator if settings.adaptive_enabled else None,
+            seen_prompts=seen_prompts,
+            adaptive_current_difficulty=adaptive_difficulty,
+            adaptive_peak_difficulty=adaptive_difficulty,
         )
 
         with self.lock:
@@ -123,11 +139,17 @@ class SessionManager:
                 if session.mode != "zetamac":
                     session.score -= 1
 
+            if session.adaptive_enabled():
+                self._update_adaptive_difficulty(session)
+
             session.current_index += 1
 
             if session.current_index >= session.total_questions:
                 self._finalize_session(session=session, now=now, reason="question_limit")
                 return session
+
+            if session.adaptive_enabled():
+                self._ensure_next_question(session)
 
             next_question = session.questions[session.current_index]
             next_question.presented_at = now
@@ -203,6 +225,10 @@ class SessionManager:
 
         current_question.result = "unanswered"
         current_question.answered_at = now
+        current_question.response_time_ms = max(
+            0,
+            int((now - current_question.presented_at).total_seconds() * 1000),
+        )
         session.unanswered += 1
 
     def _cleanup_stale_sessions(self, now: datetime) -> None:
@@ -214,6 +240,56 @@ class SessionManager:
         ]
         for session_id in stale_ids:
             self.sessions.pop(session_id, None)
+
+    def _ensure_next_question(self, session: GameSession) -> None:
+        if session.current_index < len(session.questions):
+            return
+        if session.generator is None:
+            raise ValueError("Adaptive generator state is unavailable.")
+
+        next_question = session.generator.generate_question(
+            adaptive_difficulty=session.adaptive_current_difficulty,
+            seen_prompts=session.seen_prompts,
+        )
+        session.questions.append(next_question)
+
+    def _update_adaptive_difficulty(self, session: GameSession) -> None:
+        recent_questions = [
+            question
+            for question in session.questions
+            if question.result in {"correct", "incorrect"}
+        ][-8:]
+        if not recent_questions:
+            return
+
+        recent_times = [
+            question.response_time_ms / 1000
+            for question in recent_questions
+            if question.response_time_ms is not None
+        ]
+        if not recent_times:
+            return
+
+        recent_median_time = float(median(recent_times))
+        recent_accuracy = (
+            sum(1 for question in recent_questions if question.result == "correct") / len(recent_questions)
+        )
+        target_time = float(session.generation_settings.get("target_pace_seconds", 2.0))
+        current_difficulty = float(
+            session.adaptive_current_difficulty
+            if session.adaptive_current_difficulty is not None
+            else session.generation_settings.get("initial_difficulty", 40.0)
+        )
+        time_error = target_time - recent_median_time
+        accuracy_error = recent_accuracy - 0.9
+        delta = clamp((2.5 * time_error) + (10.0 * accuracy_error), -5.0, 5.0)
+        updated_difficulty = clamp(current_difficulty + delta, 0.0, 100.0)
+
+        session.adaptive_current_difficulty = updated_difficulty
+        if session.adaptive_peak_difficulty is None:
+            session.adaptive_peak_difficulty = updated_difficulty
+        else:
+            session.adaptive_peak_difficulty = max(session.adaptive_peak_difficulty, updated_difficulty)
 
     def build_session_payload(self, session: GameSession, include_history: bool = False) -> dict[str, object]:
         now = utc_now()

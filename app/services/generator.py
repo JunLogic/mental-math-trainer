@@ -6,7 +6,7 @@ from decimal import Decimal
 from typing import Any
 
 from app.models.game import BaseOperation, QuestionRecord
-from app.services.config import GenerationSettings
+from app.services.config import GenerationSettings, clamp, difficulty_profile_for_scalar
 
 OPERATION_SYMBOLS: dict[BaseOperation, str] = {
     "addition": "+",
@@ -70,29 +70,46 @@ class QuestionGenerator:
         seen_prompts: set[str] = set()
 
         while len(questions) < self.settings.max_questions:
-            question = self._generate_question()
-            duplicate_attempts = 0
-            while duplicate_attempts < 24 and question.prompt in seen_prompts:
-                question = self._generate_question()
-                duplicate_attempts += 1
-            seen_prompts.add(question.prompt)
+            question = self.generate_question(seen_prompts=seen_prompts)
             questions.append(question)
 
         return questions
 
-    def _generate_question(self) -> QuestionRecord:
+    def generate_question(
+        self,
+        adaptive_difficulty: float | None = None,
+        seen_prompts: set[str] | None = None,
+    ) -> QuestionRecord:
+        question = self._generate_question(adaptive_difficulty=adaptive_difficulty)
+        if seen_prompts is None:
+            return question
+
+        duplicate_attempts = 0
+        while duplicate_attempts < 24 and question.prompt in seen_prompts:
+            question = self._generate_question(adaptive_difficulty=adaptive_difficulty)
+            duplicate_attempts += 1
+        seen_prompts.add(question.prompt)
+        return question
+
+    def _generate_question(self, adaptive_difficulty: float | None = None) -> QuestionRecord:
         if self.settings.mode == "zetamac":
-            return self._generate_zetamac_question()
+            return self._generate_zetamac_question(adaptive_difficulty=adaptive_difficulty)
+
+        generation_context = self._resolve_generation_context(adaptive_difficulty)
 
         base_operation = self.rng.choices(
-            population=list(self.operation_weights.keys()),
-            weights=list(self.operation_weights.values()),
+            population=list(generation_context["operation_weights"].keys()),
+            weights=list(generation_context["operation_weights"].values()),
             k=1,
         )[0]
-        used_decimal = self.rng.random() < self.normalized_settings["decimal_probability"]
-        used_missing_variable = self.rng.random() < self.normalized_settings["missing_variable_probability"]
+        used_decimal = self.rng.random() < generation_context["decimal_probability"]
+        used_missing_variable = self.rng.random() < generation_context["missing_variable_probability"]
 
-        operand_set = self._generate_operands(base_operation, used_decimal)
+        operand_set = self._generate_operands(
+            base_operation,
+            used_decimal,
+            difficulty_profile=generation_context["difficulty_profile"],
+        )
         context = self._build_question_context(
             base_operation=base_operation,
             left=operand_set.left,
@@ -127,10 +144,11 @@ class QuestionGenerator:
                 "difficulty_tag": operand_set.difficulty_tag,
                 "family_label": family_label,
                 "preset_name": self.settings.preset_name,
+                "difficulty_at_question": round(adaptive_difficulty, 2) if adaptive_difficulty is not None else None,
             },
         )
 
-    def _generate_zetamac_question(self) -> QuestionRecord:
+    def _generate_zetamac_question(self, adaptive_difficulty: float | None = None) -> QuestionRecord:
         zetamac_settings = self.settings.zetamac_settings
         enabled_operations = [
             operation
@@ -138,7 +156,13 @@ class QuestionGenerator:
             if enabled
         ]
         base_operation = self.rng.choice(enabled_operations)
-        left, right, result = self._generate_zetamac_operands(base_operation, zetamac_settings["ranges"][base_operation])
+        operation_ranges = zetamac_settings["ranges"][base_operation]
+        effective_ranges = (
+            self._adaptive_zetamac_ranges(operation_ranges, adaptive_difficulty)
+            if adaptive_difficulty is not None
+            else operation_ranges
+        )
+        left, right, result = self._generate_zetamac_operands(base_operation, effective_ranges)
         prompt = f"{format_number(left)} {OPERATION_SYMBOLS[base_operation]} {format_number(right)}"
         family_label = f"zetamac {base_operation}"
         return QuestionRecord(
@@ -157,8 +181,62 @@ class QuestionGenerator:
                 "difficulty_tag": "range_drill",
                 "family_label": family_label,
                 "preset_name": "zetamac",
+                "difficulty_at_question": round(adaptive_difficulty, 2) if adaptive_difficulty is not None else None,
             },
         )
+
+    def _resolve_generation_context(self, adaptive_difficulty: float | None) -> dict[str, Any]:
+        if adaptive_difficulty is None:
+            return {
+                "operation_weights": self.operation_weights,
+                "decimal_probability": self.normalized_settings["decimal_probability"],
+                "missing_variable_probability": self.normalized_settings["missing_variable_probability"],
+                "difficulty_profile": self.settings.difficulty_profile,
+            }
+
+        adaptive_difficulty = clamp(float(adaptive_difficulty), 0.0, 100.0)
+        difficulty_shift = (adaptive_difficulty - 40.0) / 60.0
+        operation_weights = dict(self.operation_weights)
+        if self.settings.mode == "assessment":
+            operation_weights["addition"] *= clamp(1.0 - (0.24 * difficulty_shift), 0.62, 1.15)
+            operation_weights["subtraction"] *= clamp(1.0 - (0.12 * difficulty_shift), 0.72, 1.12)
+            operation_weights["multiplication"] *= clamp(1.0 + (0.32 * difficulty_shift), 0.82, 1.65)
+            operation_weights["division"] *= clamp(1.0 + (0.24 * difficulty_shift), 0.82, 1.5)
+            decimal_minimum, decimal_maximum = 0.12, 0.68
+            missing_minimum, missing_maximum = 0.05, 0.42
+        else:
+            operation_weights["addition"] *= clamp(1.0 - (0.18 * difficulty_shift), 0.75, 1.2)
+            operation_weights["subtraction"] *= clamp(1.0 - (0.08 * difficulty_shift), 0.8, 1.15)
+            operation_weights["multiplication"] *= clamp(1.0 + (0.14 * difficulty_shift), 0.8, 1.3)
+            operation_weights["division"] *= clamp(1.0 + (0.12 * difficulty_shift), 0.8, 1.3)
+            decimal_minimum, decimal_maximum = 0.08, 0.62
+            missing_minimum, missing_maximum = 0.03, 0.38
+        return {
+            "operation_weights": operation_weights,
+            "decimal_probability": clamp(
+                self.normalized_settings["decimal_probability"] + (0.18 * difficulty_shift),
+                decimal_minimum,
+                decimal_maximum,
+            ),
+            "missing_variable_probability": clamp(
+                self.normalized_settings["missing_variable_probability"] + (0.14 * difficulty_shift),
+                missing_minimum,
+                missing_maximum,
+            ),
+            "difficulty_profile": difficulty_profile_for_scalar(adaptive_difficulty),
+        }
+
+    def _adaptive_zetamac_ranges(self, ranges: dict[str, int], adaptive_difficulty: float) -> dict[str, int]:
+        span_scale = clamp(0.35 + ((adaptive_difficulty / 100.0) * 0.65), 0.25, 1.0)
+        effective_ranges: dict[str, int] = {}
+        for side in ("left", "right"):
+            minimum = ranges[f"{side}_min"]
+            maximum = ranges[f"{side}_max"]
+            span = max(0, maximum - minimum)
+            adjusted_maximum = minimum + int(round(span * span_scale))
+            effective_ranges[f"{side}_min"] = minimum
+            effective_ranges[f"{side}_max"] = min(maximum, adjusted_maximum)
+        return effective_ranges
 
     def _generate_zetamac_operands(
         self,
@@ -186,17 +264,23 @@ class QuestionGenerator:
         left = answer * right
         return left, right, answer
 
-    def _generate_operands(self, base_operation: BaseOperation, used_decimal: bool) -> OperandSet:
+    def _generate_operands(
+        self,
+        base_operation: BaseOperation,
+        used_decimal: bool,
+        difficulty_profile: dict[str, Any] | None = None,
+    ) -> OperandSet:
+        profile = difficulty_profile or self.settings.difficulty_profile
         if base_operation == "addition":
-            return self._generate_addition(used_decimal)
+            return self._generate_addition(used_decimal, profile)
         if base_operation == "subtraction":
-            return self._generate_subtraction(used_decimal)
+            return self._generate_subtraction(used_decimal, profile)
         if base_operation == "multiplication":
-            return self._generate_multiplication(used_decimal)
-        return self._generate_division(used_decimal)
+            return self._generate_multiplication(used_decimal, profile)
+        return self._generate_division(used_decimal, profile)
 
-    def _generate_addition(self, used_decimal: bool) -> OperandSet:
-        profile = self.settings.difficulty_profile["addition"]
+    def _generate_addition(self, used_decimal: bool, difficulty_profile: dict[str, Any]) -> OperandSet:
+        profile = difficulty_profile["addition"]
         if used_decimal:
             wants_carry = self.rng.random() < profile["decimal_carry_bias"]
             for _ in range(40):
@@ -209,17 +293,24 @@ class QuestionGenerator:
             return OperandSet(left=left, right=right, result=left + right, difficulty_tag="decimal_mixed")
 
         wants_carry = self.rng.random() < profile["carry_bias"]
-        for _ in range(40):
+        wants_multi_carry = wants_carry and self.rng.random() < float(profile.get("multi_carry_bias", 0.0))
+        for _ in range(64):
             left = Decimal(self._random_int(profile["integer_left"]))
             right = Decimal(self._random_int(profile["integer_right"]))
-            carries = self._has_integer_carry(left, right)
+            carry_count = self._count_integer_carries(left, right)
+            carries = carry_count > 0
+            if wants_multi_carry and carry_count < 2:
+                continue
             if wants_carry == carries:
-                tag = "carry" if carries else "clean"
+                if carry_count >= 2:
+                    tag = "multi_carry"
+                else:
+                    tag = "carry" if carries else "clean"
                 return OperandSet(left=left, right=right, result=left + right, difficulty_tag=tag)
         return OperandSet(left=left, right=right, result=left + right, difficulty_tag="mixed")
 
-    def _generate_subtraction(self, used_decimal: bool) -> OperandSet:
-        profile = self.settings.difficulty_profile["subtraction"]
+    def _generate_subtraction(self, used_decimal: bool, difficulty_profile: dict[str, Any]) -> OperandSet:
+        profile = difficulty_profile["subtraction"]
         if used_decimal:
             wants_borrow = self.rng.random() < profile["decimal_borrow_bias"]
             for _ in range(40):
@@ -233,18 +324,36 @@ class QuestionGenerator:
             return OperandSet(left=left, right=right, result=result, difficulty_tag="decimal_mixed")
 
         wants_borrow = self.rng.random() < profile["borrow_bias"]
-        for _ in range(40):
+        wants_chain_borrow = wants_borrow and self.rng.random() < float(profile.get("chain_borrow_bias", 0.0))
+        wants_across_zero = wants_borrow and self.rng.random() < float(profile.get("across_zero_bias", 0.0))
+
+        if wants_across_zero:
+            across_zero_candidate = self._generate_across_zero_subtraction(profile)
+            if across_zero_candidate is not None:
+                return across_zero_candidate
+
+        for _ in range(72):
             right = Decimal(self._random_int(profile["integer_right"]))
             result = Decimal(self._random_int(profile["integer_result"]))
             left = right + result
-            has_borrow = self._has_integer_borrow(left, right)
+            borrow_details = self._integer_borrow_details(left, right)
+            has_borrow = borrow_details["borrow_count"] > 0
+            if wants_chain_borrow and borrow_details["borrow_count"] < 2:
+                continue
+            if wants_across_zero and not borrow_details["borrow_across_zero"]:
+                continue
             if wants_borrow == has_borrow:
-                tag = "borrow" if has_borrow else "clean"
+                if borrow_details["borrow_across_zero"]:
+                    tag = "across_zero_borrow"
+                elif borrow_details["borrow_count"] >= 2:
+                    tag = "chain_borrow"
+                else:
+                    tag = "borrow" if has_borrow else "clean"
                 return OperandSet(left=left, right=right, result=result, difficulty_tag=tag)
         return OperandSet(left=left, right=right, result=result, difficulty_tag="mixed")
 
-    def _generate_multiplication(self, used_decimal: bool) -> OperandSet:
-        profile = self.settings.difficulty_profile["multiplication"]
+    def _generate_multiplication(self, used_decimal: bool, difficulty_profile: dict[str, Any]) -> OperandSet:
+        profile = difficulty_profile["multiplication"]
         if used_decimal:
             if self.rng.random() < profile["pair_bias"]:
                 left_text, right_text = self.rng.choice(profile["decimal_pair_choices"])
@@ -265,21 +374,31 @@ class QuestionGenerator:
                 left, right = decimal_factor, integer_factor
             return OperandSet(left=left, right=right, result=left * right, difficulty_tag="decimal_factor")
 
+        integer_pair_choices = profile.get("integer_pair_choices", [])
+        if integer_pair_choices and self.rng.random() < float(profile.get("hard_pair_bias", 0.0)):
+            left_value, right_value = self.rng.choice(integer_pair_choices)
+            left = Decimal(left_value)
+            right = Decimal(right_value)
+            return OperandSet(left=left, right=right, result=left * right, difficulty_tag="two_digit_pair")
+
         left = Decimal(self._random_int(profile["integer_left"]))
         right = Decimal(self._random_int(profile["integer_right"]))
+        if self.rng.random() < float(profile.get("two_digit_pair_bias", 0.0)):
+            left = Decimal(max(10, int(left)))
+            right = Decimal(max(10, int(right)))
         if self.rng.random() < profile["large_factor_bias"]:
             if left < 10 and right < 10:
                 if self.rng.random() < 0.5:
                     left = Decimal(max(10, int(left) + self.rng.randint(2, 6)))
                 else:
                     right = Decimal(max(10, int(right) + self.rng.randint(2, 6)))
-            tag = "larger_factors"
+            tag = "two_digit_multiplication" if left >= 10 and right >= 10 else "larger_factors"
         else:
             tag = "standard_factors"
         return OperandSet(left=left, right=right, result=left * right, difficulty_tag=tag)
 
-    def _generate_division(self, used_decimal: bool) -> OperandSet:
-        profile = self.settings.difficulty_profile["division"]
+    def _generate_division(self, used_decimal: bool, difficulty_profile: dict[str, Any]) -> OperandSet:
+        profile = difficulty_profile["division"]
         if used_decimal:
             patterns = ["decimal_pair", "decimal_divisor", "decimal_quotient"]
             weights = [profile["pair_bias"], (1 - profile["pair_bias"]) / 2, (1 - profile["pair_bias"]) / 2]
@@ -301,13 +420,23 @@ class QuestionGenerator:
             result = decimal_from_text(self.rng.choice(profile["decimal_result_choices"]))
             return OperandSet(left=right * result, right=right, result=result, difficulty_tag="decimal_quotient")
 
+        integer_pair_choices = profile.get("integer_pair_choices", [])
+        if integer_pair_choices and self.rng.random() < float(profile.get("integer_pair_bias", 0.0)):
+            left_text, right_text, result_text = self.rng.choice(integer_pair_choices)
+            return OperandSet(
+                left=decimal_from_text(left_text),
+                right=decimal_from_text(right_text),
+                result=decimal_from_text(result_text),
+                difficulty_tag="integer_pair",
+            )
+
         right = Decimal(self._random_int(profile["integer_divisor"]))
         result = Decimal(self._random_int(profile["integer_result"]))
         if self.rng.random() < 0.68:
-            if right < 12:
-                right += Decimal(self.rng.randint(2, 6))
-            if result < 10:
-                result += Decimal(self.rng.randint(2, 5))
+            if right < 14:
+                right += Decimal(self.rng.randint(3, 8))
+            if result < 12:
+                result += Decimal(self.rng.randint(3, 7))
         return OperandSet(left=right * result, right=right, result=result, difficulty_tag="larger_division")
 
     def _build_question_context(
@@ -493,29 +622,85 @@ class QuestionGenerator:
     def _random_tenth(self, range_values: list[int]) -> Decimal:
         return to_decimal_from_tenths(self._random_int(range_values))
 
-    def _has_integer_carry(self, left: Decimal, right: Decimal) -> bool:
+    def _count_integer_carries(self, left: Decimal, right: Decimal) -> int:
         left_digits = [int(digit) for digit in str(int(left))[::-1]]
         right_digits = [int(digit) for digit in str(int(right))[::-1]]
         carry = 0
+        carry_count = 0
         for index in range(max(len(left_digits), len(right_digits))):
             left_digit = left_digits[index] if index < len(left_digits) else 0
             right_digit = right_digits[index] if index < len(right_digits) else 0
             carry = 1 if left_digit + right_digit + carry >= 10 else 0
             if carry:
-                return True
-        return False
+                carry_count += 1
+        return carry_count
 
-    def _has_integer_borrow(self, left: Decimal, right: Decimal) -> bool:
+    def _has_integer_carry(self, left: Decimal, right: Decimal) -> bool:
+        return self._count_integer_carries(left, right) > 0
+
+    def _integer_borrow_details(self, left: Decimal, right: Decimal) -> dict[str, int | bool]:
         left_digits = [int(digit) for digit in str(int(left))[::-1]]
         right_digits = [int(digit) for digit in str(int(right))[::-1]]
         borrow = 0
+        borrow_count = 0
+        current_chain = 0
+        longest_chain = 0
+        borrow_across_zero = False
         for index in range(max(len(left_digits), len(right_digits))):
             left_digit = left_digits[index] if index < len(left_digits) else 0
             right_digit = right_digits[index] if index < len(right_digits) else 0
-            if left_digit - borrow < right_digit:
-                return True
-            borrow = 0
-        return False
+            effective_left = left_digit - borrow
+            next_borrow = effective_left < right_digit
+            if next_borrow:
+                borrow_count += 1
+                current_chain += 1
+                longest_chain = max(longest_chain, current_chain)
+                if left_digit == 0 or effective_left < 0:
+                    borrow_across_zero = True
+                borrow = 1
+            else:
+                current_chain = 0
+                borrow = 0
+        return {
+            "borrow_count": borrow_count,
+            "borrow_across_zero": borrow_across_zero,
+            "longest_chain": longest_chain,
+        }
+
+    def _has_integer_borrow(self, left: Decimal, right: Decimal) -> bool:
+        return bool(self._integer_borrow_details(left, right)["borrow_count"])
+
+    def _generate_across_zero_subtraction(self, profile: dict[str, Any]) -> OperandSet | None:
+        maximum_left = profile["integer_right"][1] + profile["integer_result"][1]
+        minimum_right = max(2, profile["integer_right"][0])
+        for _ in range(48):
+            hundreds_digit = self.rng.randint(1, max(1, min(9, maximum_left // 100 or 1)))
+            tens_digit = self.rng.choice([0, 0, 0, 1, 2, 3, 4])
+            units_digit = self.rng.randint(1, 9)
+            left_value = (hundreds_digit * 100) + (tens_digit * 10) + units_digit
+            if left_value > maximum_left or left_value <= minimum_right:
+                continue
+
+            upper_right = min(profile["integer_right"][1], left_value - 1)
+            if minimum_right > upper_right:
+                continue
+
+            for _ in range(24):
+                right_value = self.rng.randint(minimum_right, upper_right)
+                borrow_details = self._integer_borrow_details(Decimal(left_value), Decimal(right_value))
+                result_value = left_value - right_value
+                if (
+                    borrow_details["borrow_across_zero"]
+                    and borrow_details["borrow_count"] >= 2
+                    and profile["integer_result"][0] <= result_value <= profile["integer_result"][1]
+                ):
+                    return OperandSet(
+                        left=Decimal(left_value),
+                        right=Decimal(right_value),
+                        result=Decimal(result_value),
+                        difficulty_tag="across_zero_borrow",
+                    )
+        return None
 
     def _tenths_digit(self, value: Decimal) -> int:
         return int((value * 10) % 10)

@@ -20,14 +20,21 @@ def resolve_settings(payload: Optional[GameStartRequest]) -> GenerationSettings:
         overrides: dict[str, object] = {}
         if payload.zetamac_settings is not None:
             overrides["zetamac_settings"] = payload.zetamac_settings.model_dump(exclude_none=True)
-        return GenerationSettings.for_zetamac(overrides)
-
-    if payload is not None and payload.preset_name is not None:
+        settings = GenerationSettings.for_zetamac(overrides)
+    elif payload is not None and payload.preset_name is not None:
         settings = GenerationSettings.from_preset(payload.preset_name, mode=payload.mode)
     else:
         settings = load_default_settings()
         if payload is not None and payload.mode is not None:
             settings.mode = payload.mode
+
+    if payload is not None:
+        if payload.adaptive_enabled is not None:
+            settings.adaptive_enabled = payload.adaptive_enabled
+        if payload.target_pace_seconds is not None:
+            settings.target_pace_seconds = payload.target_pace_seconds
+        if payload.initial_difficulty is not None:
+            settings.initial_difficulty = payload.initial_difficulty
 
     if payload is None or payload.settings is None:
         settings.validate()

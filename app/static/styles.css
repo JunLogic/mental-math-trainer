@@ -99,26 +99,14 @@ h3 {
   font-size: 0.92rem;
 }
 
-.rules {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 10px;
-  margin-bottom: 24px;
-}
-
-.rules span,
 .summary-card,
 .status-bar > div,
 .control select,
+.control input,
 .control {
   background: var(--panel-2);
   border: 1px solid var(--border);
   border-radius: 14px;
-}
-
-.rules span {
-  padding: 10px 14px;
-  color: var(--muted);
 }
 
 .control-grid {
@@ -126,6 +114,10 @@ h3 {
   grid-template-columns: repeat(2, minmax(0, 1fr));
   gap: 12px;
   margin-bottom: 20px;
+}
+
+.adaptive-control-grid {
+  grid-template-columns: repeat(3, minmax(0, 1fr));
 }
 
 .control {
@@ -186,6 +178,18 @@ h3 {
   color: var(--text);
   outline: none;
   appearance: none;
+}
+
+.control input {
+  width: 100%;
+  min-height: 44px;
+  padding: 0 12px;
+  color: var(--text);
+  outline: none;
+}
+
+.adaptive-input::placeholder {
+  color: var(--muted);
 }
 
 .zetamac-panel {

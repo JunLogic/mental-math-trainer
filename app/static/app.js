@@ -3,6 +3,8 @@ const MODE_LABELS = {
   training: "Practice Mode",
   zetamac: "Zetamac Mode",
 };
+const TARGET_PACE_BOUNDS = { min: 2.0, max: 6.0 };
+const INITIAL_DIFFICULTY_BOUNDS = { min: 0, max: 100 };
 const PRESET_OPTIONS = {
   assessment: [
     { value: "interview_default", label: "Interview Default" },
@@ -38,6 +40,11 @@ const exitRunButton = document.getElementById("exit-run-button");
 const modeInputs = [...document.querySelectorAll('input[name="mode"]')];
 const presetControl = document.getElementById("preset-control");
 const presetSelect = document.getElementById("preset-select");
+const adaptiveEnabledSelect = document.getElementById("adaptive-enabled");
+const targetPaceControl = document.getElementById("target-pace-control");
+const targetPaceInput = document.getElementById("target-pace");
+const initialDifficultyControl = document.getElementById("initial-difficulty-control");
+const initialDifficultyInput = document.getElementById("initial-difficulty");
 const zetamacSettingsPanel = document.getElementById("zetamac-settings");
 const modeBadge = document.getElementById("mode-badge");
 const presetBadge = document.getElementById("preset-badge");
@@ -54,6 +61,8 @@ const typedHint = document.getElementById("typed-hint");
 const trainingHint = document.getElementById("training-hint");
 const typedHintText = document.getElementById("typed-hint-text");
 const summaryGrid = document.getElementById("summary-grid");
+const adaptiveResults = document.getElementById("adaptive-results");
+const adaptiveGrid = document.getElementById("adaptive-grid");
 const operationBody = document.getElementById("operation-body");
 const leaderboardBody = document.getElementById("leaderboard-body");
 const historyBody = document.getElementById("history-body");
@@ -122,6 +131,10 @@ function formatResponseSeconds(value) {
   return `${Number(value || 0).toFixed(3).replace(/\.?0+$/, "")}s`;
 }
 
+function formatDifficulty(value) {
+  return Number(value || 0).toFixed(1).replace(/\.0$/, "");
+}
+
 function focusAnswerInput() {
   if (gameScreen.classList.contains("hidden") || answerForm.classList.contains("hidden")) {
     return;
@@ -154,6 +167,53 @@ function presetLabel(presetName) {
   return PRESET_LABELS[presetName] || presetName || "-";
 }
 
+function adaptiveEnabled() {
+  return adaptiveEnabledSelect.value === "on";
+}
+
+function syncAdaptiveControls() {
+  const isEnabled = adaptiveEnabled();
+  targetPaceControl.classList.toggle("hidden", !isEnabled);
+  initialDifficultyControl.classList.toggle("hidden", !isEnabled);
+  targetPaceInput.disabled = !isEnabled;
+  initialDifficultyInput.disabled = !isEnabled;
+}
+
+function readBoundedNumber(inputEl, { min, max, label }) {
+  const raw = String(inputEl.value || "").trim();
+  const value = Number(raw);
+  if (!Number.isFinite(value)) {
+    throw new Error(`${label} must be a number.`);
+  }
+  if (value < min || value > max) {
+    throw new Error(`${label} must be between ${min.toFixed(1)} and ${max.toFixed(1)}.`);
+  }
+  return value;
+}
+
+function collectAdaptiveSettings() {
+  const isEnabled = adaptiveEnabled();
+  const targetPaceSeconds = isEnabled
+    ? readBoundedNumber(targetPaceInput, {
+        min: TARGET_PACE_BOUNDS.min,
+        max: TARGET_PACE_BOUNDS.max,
+        label: "Target pace",
+      })
+    : Number(targetPaceInput.value || TARGET_PACE_BOUNDS.min);
+  const initialDifficulty = isEnabled
+    ? readBoundedNumber(initialDifficultyInput, {
+        min: INITIAL_DIFFICULTY_BOUNDS.min,
+        max: INITIAL_DIFFICULTY_BOUNDS.max,
+        label: "Initial difficulty",
+      })
+    : Number(initialDifficultyInput.value || 40);
+  return {
+    adaptive_enabled: isEnabled,
+    target_pace_seconds: targetPaceSeconds,
+    initial_difficulty: initialDifficulty,
+  };
+}
+
 function getSelectedMode() {
   const checked = modeInputs.find((input) => input.checked);
   return checked ? checked.value : "assessment";
@@ -174,6 +234,7 @@ function syncStartControls() {
   if (!isZetamac) {
     syncPresetOptions();
   }
+  syncAdaptiveControls();
 }
 
 async function requestJson(url, options = {}) {
@@ -407,6 +468,31 @@ function summaryCards(summary) {
   });
 }
 
+function renderAdaptiveSummary(adaptive = { enabled: false }) {
+  adaptiveGrid.innerHTML = "";
+  adaptiveResults.classList.toggle("hidden", !adaptive.enabled);
+  if (!adaptive.enabled) {
+    return;
+  }
+
+  const cards = [
+    ["Adaptive Difficulty", "On"],
+    ["Initial difficulty", formatDifficulty(adaptive.initial_difficulty)],
+    ["Final difficulty", formatDifficulty(adaptive.final_difficulty)],
+    ["Peak difficulty", formatDifficulty(adaptive.peak_difficulty)],
+    ["Average difficulty", formatDifficulty(adaptive.average_difficulty)],
+    ["Target pace", formatResponseSeconds(adaptive.target_pace_seconds)],
+    ["Achieved median pace", formatResponseSeconds(adaptive.achieved_median_pace_seconds)],
+  ];
+
+  cards.forEach(([label, value]) => {
+    const card = document.createElement("article");
+    card.className = "summary-card";
+    card.innerHTML = `<span>${label}</span><strong>${value}</strong>`;
+    adaptiveGrid.appendChild(card);
+  });
+}
+
 function renderOperationDiagnostics(items = []) {
   operationBody.innerHTML = "";
   items.forEach((item) => {
@@ -486,17 +572,20 @@ async function startGame() {
   syncStartControls();
   clearStatusMessage();
   try {
+    const adaptiveSettings = collectAdaptiveSettings();
     const payload = await requestJson("/api/game/start", {
       method: "POST",
       body: JSON.stringify(
         state.selectedMode === "zetamac"
           ? {
               mode: "zetamac",
+              ...adaptiveSettings,
               zetamac_settings: collectZetamacSettings(),
             }
           : {
               mode: state.selectedMode,
               preset_name: presetSelect.value,
+              ...adaptiveSettings,
             },
       ),
     });
@@ -583,6 +672,7 @@ async function handleSessionPayload(payload) {
     sessionStorage.removeItem("mental_math_session_id");
     showScreen("results");
     summaryCards(payload);
+    renderAdaptiveSummary(payload.adaptive || { enabled: false });
     renderOperationDiagnostics(payload.diagnostics?.by_operation || []);
     renderFamilyDiagnostics(payload.diagnostics?.by_family || []);
     renderHistory(payload.history || []);
@@ -609,6 +699,7 @@ async function restoreSession() {
       sessionStorage.removeItem("mental_math_session_id");
       showScreen("results");
       summaryCards(payload);
+      renderAdaptiveSummary(payload.adaptive || { enabled: false });
       renderOperationDiagnostics(payload.diagnostics?.by_operation || []);
       renderFamilyDiagnostics(payload.diagnostics?.by_family || []);
       renderHistory(payload.history || []);
@@ -657,6 +748,7 @@ document.addEventListener("visibilitychange", () => {
 modeInputs.forEach((input) => {
   input.addEventListener("change", syncStartControls);
 });
+adaptiveEnabledSelect.addEventListener("change", syncAdaptiveControls);
 startButton.addEventListener("click", startGame);
 exitRunButton.addEventListener("click", () => {
   abortRun().catch(() => {});
@@ -664,6 +756,8 @@ exitRunButton.addEventListener("click", () => {
 restartButton.addEventListener("click", async () => {
   resetTransientState();
   summaryGrid.innerHTML = "";
+  adaptiveGrid.innerHTML = "";
+  adaptiveResults.classList.add("hidden");
   operationBody.innerHTML = "";
   familyBody.innerHTML = "";
   historyBody.innerHTML = "";

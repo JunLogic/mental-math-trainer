@@ -15,12 +15,6 @@
         A minimal local arithmetic speed trainer with an interview-style arithmetic mode,
         a practice mode, and a Zetamac-inspired drill mode.
       </p>
-      <div class="rules">
-        <span>Interview-style arithmetic mode</span>
-        <span>Practice mode</span>
-        <span>Keyboard-first gameplay</span>
-        <span>Local timing analytics</span>
-      </div>
       <div class="control-grid">
         <fieldset class="control mode-control">
           <span>Mode</span>
@@ -45,6 +39,43 @@
             <option value="interview_default" selected>Interview Default</option>
             <option value="interview_balanced">Interview Balanced</option>
           </select>
+        </label>
+      </div>
+      <div class="control-grid adaptive-control-grid">
+        <label class="control">
+          <span>Adaptive Difficulty</span>
+          <select id="adaptive-enabled">
+            <option value="off" selected>Off</option>
+            <option value="on">On</option>
+          </select>
+        </label>
+        <label id="target-pace-control" class="control adaptive-detail hidden">
+          <span>Target Pace (seconds)</span>
+          <input
+            id="target-pace"
+            class="adaptive-input"
+            type="number"
+            min="2"
+            max="6"
+            step="0.1"
+            value="2.0"
+            inputmode="decimal"
+            placeholder="2.0-6.0"
+          >
+        </label>
+        <label id="initial-difficulty-control" class="control adaptive-detail hidden">
+          <span>Initial Difficulty</span>
+          <input
+            id="initial-difficulty"
+            class="adaptive-input"
+            type="number"
+            min="0"
+            max="100"
+            step="1"
+            value="40"
+            inputmode="numeric"
+            placeholder="0-100"
+          >
         </label>
       </div>
       <section id="zetamac-settings" class="zetamac-panel hidden">
@@ -159,6 +190,11 @@
       <p class="eyebrow">Run complete</p>
       <h2>Results</h2>
       <div id="summary-grid" class="summary-grid"></div>
+
+      <section id="adaptive-results" class="results-block hidden">
+        <h3>Adaptive difficulty</h3>
+        <div id="adaptive-grid" class="summary-grid"></div>
+      </section>
 
       <section class="results-block">
         <h3>Operation breakdown</h3>

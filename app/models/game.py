@@ -58,6 +58,7 @@ class QuestionRecord:
             "used_missing_variable": self.used_missing_variable,
             "family_label": self.metadata.get("family_label"),
             "difficulty_tag": self.metadata.get("difficulty_tag"),
+            "difficulty_at_question": self.metadata.get("difficulty_at_question"),
             "input_mode": "multiple_choice" if mode == "training" else "typed",
         }
         payload["options"] = self.options if mode == "training" else []
@@ -81,10 +82,37 @@ class QuestionRecord:
             "difficulty_tag": self.metadata.get("difficulty_tag"),
             "used_decimal": self.used_decimal,
             "used_missing_variable": self.used_missing_variable,
+            "difficulty_at_question": self.metadata.get("difficulty_at_question"),
             "response_time_seconds": (
                 round(self.response_time_ms / 1000, 3) if self.response_time_ms is not None else None
             ),
         }
+
+    def to_storage_row(self, run_id: int, mode_label: str, question_index: int) -> tuple[Any, ...]:
+        return (
+            run_id,
+            mode_label,
+            question_index,
+            self.prompt,
+            self.correct_answer,
+            self.submitted_answer,
+            1 if self.result == "correct" else 0,
+            self.result,
+            self.response_time_ms,
+            self.base_operation,
+            1 if self.used_decimal else 0,
+            1 if self.used_missing_variable else 0,
+            self.metadata.get("left"),
+            self.metadata.get("right"),
+            self.metadata.get("result"),
+            self.metadata.get("answer_role"),
+            self.metadata.get("family_label"),
+            self.metadata.get("difficulty_tag"),
+            self.metadata.get("difficulty_at_question"),
+            self.selected_option,
+            self.correct_option_index,
+            self.base_operation,
+        )
 
 
 @dataclass
@@ -104,6 +132,10 @@ class GameSession:
     attempted: int
     questions: list[QuestionRecord]
     generation_settings: dict[str, Any]
+    generator: Any | None = None
+    seen_prompts: set[str] = field(default_factory=set)
+    adaptive_current_difficulty: float | None = None
+    adaptive_peak_difficulty: float | None = None
     finished: bool = False
     finalized_at: datetime | None = None
     finish_reason: str | None = None
@@ -111,10 +143,10 @@ class GameSession:
 
     @property
     def total_questions(self) -> int:
-        return len(self.questions)
+        return int(self.generation_settings.get("max_questions", len(self.questions)))
 
     def current_question(self) -> QuestionRecord | None:
-        if self.finished or self.current_index >= self.total_questions:
+        if self.finished or self.current_index >= self.total_questions or self.current_index >= len(self.questions):
             return None
         return self.questions[self.current_index]
 
@@ -166,6 +198,48 @@ class GameSession:
             enabled = [name for name, enabled in operations.items() if enabled]
             return ", ".join(display_operation_name(name) for name in enabled) if enabled else "None"
         return self.generation_settings.get("preset_name", "-")
+
+    def adaptive_enabled(self) -> bool:
+        return bool(self.generation_settings.get("adaptive_enabled", False))
+
+    def question_difficulties(self) -> list[float]:
+        difficulties: list[float] = []
+        for question in self.shown_questions():
+            difficulty = question.metadata.get("difficulty_at_question")
+            if difficulty is None:
+                continue
+            difficulties.append(float(difficulty))
+        return difficulties
+
+    def average_difficulty(self) -> float | None:
+        difficulties = self.question_difficulties()
+        if not difficulties:
+            return None
+        return sum(difficulties) / len(difficulties)
+
+    def adaptive_summary(self) -> dict[str, Any]:
+        if not self.adaptive_enabled():
+            return {
+                "enabled": False,
+                "target_pace_seconds": None,
+                "initial_difficulty": None,
+                "final_difficulty": None,
+                "peak_difficulty": None,
+                "average_difficulty": None,
+                "achieved_median_pace_seconds": None,
+            }
+
+        initial_difficulty = float(self.generation_settings.get("initial_difficulty", 40.0))
+        average_difficulty = self.average_difficulty()
+        return {
+            "enabled": True,
+            "target_pace_seconds": float(self.generation_settings.get("target_pace_seconds", 2.0)),
+            "initial_difficulty": round(initial_difficulty, 2),
+            "final_difficulty": round(float(self.adaptive_current_difficulty or initial_difficulty), 2),
+            "peak_difficulty": round(float(self.adaptive_peak_difficulty or initial_difficulty), 2),
+            "average_difficulty": round(float(average_difficulty if average_difficulty is not None else initial_difficulty), 2),
+            "achieved_median_pace_seconds": round(self.median_response_time_seconds(), 3),
+        }
 
     def diagnostics(self) -> dict[str, Any]:
         shown_questions = self.shown_questions()
@@ -266,6 +340,9 @@ class GameSession:
         }
 
     def summary(self) -> dict[str, Any]:
+        adaptive_summary = self.adaptive_summary()
+        settings = dict(self.generation_settings)
+        settings["adaptive_summary"] = adaptive_summary
         return {
             "session_id": self.session_id,
             "seed": self.seed,
@@ -295,6 +372,7 @@ class GameSession:
                 "fastest_response_time_seconds": round(self.fastest_response_time_seconds(), 3),
                 "slowest_response_time_seconds": round(self.slowest_response_time_seconds(), 3),
             },
+            "adaptive": adaptive_summary,
             "diagnostics": self.diagnostics(),
-            "settings": self.generation_settings,
+            "settings": settings,
         }

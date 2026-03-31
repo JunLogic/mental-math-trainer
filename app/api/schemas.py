@@ -46,6 +46,9 @@ class ZetamacSettingsOverride(BaseModel):
 class GameStartRequest(BaseModel):
     preset_name: Optional[str] = None
     mode: Optional[str] = None
+    adaptive_enabled: Optional[bool] = None
+    target_pace_seconds: Optional[float] = Field(default=None, ge=2.0, le=6.0)
+    initial_difficulty: Optional[float] = Field(default=None, ge=0, le=100)
     settings: Optional[GenerationSettingsOverride] = None
     zetamac_settings: Optional[ZetamacSettingsOverride] = None
 
