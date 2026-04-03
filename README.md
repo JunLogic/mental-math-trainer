@@ -1,18 +1,25 @@
 # Mental Arithmetic Speed Trainer
 
-This project is a local mental arithmetic speed trainer built as a minimal, fast web app for arithmetic drill practice.
+A local mental arithmetic speed trainer with interview-style, practice, and Zetamac-inspired modes. Keyboard-first, tracks timing per question, stores runs in SQLite, and shows analytics after each run.
 
-It includes three modes:
+## Quick Start
 
-- Interview Mode: typed-answer, interview-style arithmetic mode with an 8-minute, 80-question format
-- Practice Mode: the same generator with the existing optional multiple-choice flow
-- Zetamac Mode: a local practice implementation inspired by public arithmetic-drill behavior
+### Option 1: Download (no Python required)
 
-The app is keyboard-first, keeps timing per question, stores completed runs in SQLite, and now shows lightweight timing analytics after each run.
+Download the latest build for your platform from [Releases](../../releases), then run it:
 
-Adaptive Difficulty is also available as an optional training feature. When enabled, it adjusts question difficulty during a run based on recent response time and accuracy. When disabled, the app keeps the existing fixed preset behavior. It is presented as a local training aid, not as a claim about any external proprietary test format.
+```bash
+# Mac / Linux
+./mental-math-trainer
 
-## Run locally
+# Windows — double-click mental-math-trainer-windows.exe
+```
+
+The app opens in your browser automatically at `http://127.0.0.1:8000`.
+
+> **Mac users:** If you see an "unidentified developer" warning, right-click the file and select Open, or run: `xattr -d com.apple.quarantine ./mental-math-trainer-macos`
+
+### Option 2: Run from source
 
 Mac / Linux:
 
@@ -20,17 +27,28 @@ Mac / Linux:
 ./run.sh
 ```
 
-Windows PowerShell:
+Windows (double-click `run.bat`, or in PowerShell):
 
 ```powershell
 .\run.ps1
 ```
 
-Open:
+### Option 3: pip install
 
-```text
-http://127.0.0.1:8000
+```bash
+pip install .
+mental-math-trainer
 ```
+
+Use `--port 9000` to change the port, or `--no-browser` to skip auto-opening.
+
+## Modes
+
+- **Interview Mode** — typed-answer, 8-minute / 80-question format
+- **Practice Mode** — same generator with optional multiple-choice
+- **Zetamac Mode** — timed drill with configurable duration and per-operation ranges
+
+Adaptive Difficulty adjusts question difficulty during a run based on recent response time and accuracy. It is presented as a local training aid.
 
 ## Presets
 
@@ -63,7 +81,7 @@ Question families include:
 
 Division questions are generated backwards where needed so answers stay clean and mentally solvable.
 
-To override settings locally, create `data/question_settings.json`. Example:
+When running from source, you can override settings with `data/question_settings.json`. Installed or bundled runs use a per-user app data directory by default, and `MATH_TRAINER_DATA_DIR` can override the location. Example:
 
 ```json
 {
@@ -109,7 +127,7 @@ After each run, the results screen shows:
 
 When Adaptive Difficulty is enabled, the results screen also shows the target pace plus initial, final, peak, and average difficulty for that run.
 
-Completed runs are stored in SQLite at `data/leaderboard.db`.
+Completed runs are stored in `leaderboard.db` under the active app data directory. From source that defaults to `data/leaderboard.db`; installed or bundled runs use a per-user app data directory unless `MATH_TRAINER_DATA_DIR` is set.
 
 ## Project structure
 
