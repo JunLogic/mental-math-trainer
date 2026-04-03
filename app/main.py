@@ -1,19 +1,20 @@
 from __future__ import annotations
 
 from contextlib import asynccontextmanager
-from pathlib import Path
 
-from fastapi import FastAPI
+from fastapi import FastAPI, Request, Response
+from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
 
 from app.api.routes import router
+from app.runtime import resolve_data_dir, resolve_static_dir
 from app.services.storage import SQLiteStorage
 from app.services.session_manager import SessionManager
 
-ROOT_DIR = Path(__file__).resolve().parents[1]
-STATIC_DIR = ROOT_DIR / "app" / "static"
-DATABASE_PATH = ROOT_DIR / "data" / "leaderboard.db"
+STATIC_DIR = resolve_static_dir()
+_DATA_DIR = resolve_data_dir()
+DATABASE_PATH = _DATA_DIR / "leaderboard.db"
 
 
 @asynccontextmanager
@@ -29,7 +30,26 @@ app = FastAPI(
     title="Mental Arithmetic Speed Trainer",
     description="Local arithmetic speed trainer with interview-style, practice, and Zetamac-inspired modes.",
     lifespan=lifespan,
+    debug=False,
 )
+
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["http://localhost:8000", "http://127.0.0.1:8000"],
+    allow_methods=["GET", "POST"],
+    allow_headers=["Content-Type"],
+)
+
+
+@app.middleware("http")
+async def add_security_headers(request: Request, call_next) -> Response:
+    response = await call_next(request)
+    response.headers["X-Content-Type-Options"] = "nosniff"
+    response.headers["X-Frame-Options"] = "DENY"
+    response.headers["Referrer-Policy"] = "strict-origin-when-cross-origin"
+    return response
+
+
 app.include_router(router)
 app.mount("/static", StaticFiles(directory=STATIC_DIR), name="static")
 

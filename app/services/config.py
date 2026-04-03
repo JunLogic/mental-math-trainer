@@ -3,11 +3,11 @@ from __future__ import annotations
 import copy
 import json
 from dataclasses import asdict, dataclass, field
-from pathlib import Path
 from typing import Any
 
-ROOT_DIR = Path(__file__).resolve().parents[2]
-DATA_DIR = ROOT_DIR / "data"
+from app.runtime import resolve_data_dir
+
+DATA_DIR = resolve_data_dir()
 DEFAULT_SETTINGS_PATH = DATA_DIR / "question_settings.json"
 DEFAULT_PRESET_NAME = "interview_default"
 DEFAULT_ZETAMAC_DURATION = 120

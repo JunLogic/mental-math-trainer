@@ -51,8 +51,8 @@ def resolve_settings(payload: Optional[GameStartRequest]) -> GenerationSettings:
 def start_game(request: Request, payload: Optional[GameStartRequest] = None) -> dict[str, object]:
     try:
         settings = resolve_settings(payload)
-    except ValueError as exc:
-        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    except ValueError:
+        raise HTTPException(status_code=400, detail="Invalid game settings.")
 
     session = get_session_manager(request).start_session(settings)
     return get_session_manager(request).build_session_payload(session)
@@ -68,10 +68,10 @@ def answer_question(request: Request, payload: GameAnswerRequest) -> dict[str, o
             submitted_answer=payload.answer,
             question_number=payload.question_number,
         )
-    except KeyError as exc:
-        raise HTTPException(status_code=404, detail=str(exc)) from exc
-    except ValueError as exc:
-        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    except KeyError:
+        raise HTTPException(status_code=404, detail="Session not found.")
+    except ValueError:
+        raise HTTPException(status_code=400, detail="Invalid answer submission.")
 
     return session_manager.build_session_payload(session, include_history=session.finished)
 
@@ -81,8 +81,8 @@ def game_state(request: Request, session_id: str) -> dict[str, object]:
     session_manager = get_session_manager(request)
     try:
         session = session_manager.get_session(session_id)
-    except KeyError as exc:
-        raise HTTPException(status_code=404, detail=str(exc)) from exc
+    except KeyError:
+        raise HTTPException(status_code=404, detail="Session not found.")
     return session_manager.build_session_payload(session, include_history=session.finished)
 
 
@@ -91,8 +91,8 @@ def finish_game(request: Request, payload: GameFinishRequest) -> dict[str, objec
     session_manager = get_session_manager(request)
     try:
         session = session_manager.finish_session(payload.session_id)
-    except KeyError as exc:
-        raise HTTPException(status_code=404, detail=str(exc)) from exc
+    except KeyError:
+        raise HTTPException(status_code=404, detail="Session not found.")
     return session_manager.build_session_payload(session, include_history=True)
 
 
@@ -101,8 +101,8 @@ def abort_game(request: Request, payload: GameAbortRequest) -> dict[str, object]
     session_manager = get_session_manager(request)
     try:
         session_manager.abort_session(payload.session_id)
-    except KeyError as exc:
-        raise HTTPException(status_code=404, detail=str(exc)) from exc
+    except KeyError:
+        raise HTTPException(status_code=404, detail="Session not found.")
     return {"aborted": True}
 
 

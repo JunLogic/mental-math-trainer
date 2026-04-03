@@ -1,0 +1,23 @@
+[build-system]
+requires = ["setuptools>=68.0", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "mental-math-trainer"
+version = "1.0.0"
+description = "Local mental arithmetic speed trainer with interview, practice, and Zetamac modes"
+requires-python = ">=3.10"
+dependencies = [
+    "fastapi>=0.116.1",
+    "uvicorn[standard]>=0.35.0",
+    "scikit-learn>=1.5.2",
+]
+
+[project.scripts]
+mental-math-trainer = "app.cli:main"
+
+[tool.setuptools.packages.find]
+include = ["app*"]
+
+[tool.setuptools.package-data]
+app = ["static/*"]

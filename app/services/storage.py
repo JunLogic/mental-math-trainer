@@ -294,7 +294,13 @@ class SQLiteStorage:
     def build_saved_question_core_features(self, run_id: int) -> list[dict[str, Any]]:
         return extract_core_saved_question_feature_rows(self.list_saved_questions(run_id))
 
+    _ALLOWED_TABLE_NAMES = frozenset({"runs", "run_questions"})
+
     def _ensure_column(self, connection: sqlite3.Connection, table_name: str, column_name: str, column_sql: str) -> None:
+        if table_name not in self._ALLOWED_TABLE_NAMES:
+            raise ValueError(f"Disallowed table name: {table_name!r}")
+        if not column_name.isidentifier():
+            raise ValueError(f"Disallowed column name: {column_name!r}")
         columns = {
             row[1]
             for row in connection.execute(f"PRAGMA table_info({table_name})").fetchall()
