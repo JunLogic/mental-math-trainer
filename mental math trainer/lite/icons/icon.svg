@@ -1,0 +1,13 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" role="img" aria-label="Zetamac Lite icon">
+  <defs>
+    <linearGradient id="bg" x1="60" x2="452" y1="64" y2="448" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#F3C969"/>
+      <stop offset="1" stop-color="#75D0B4"/>
+    </linearGradient>
+  </defs>
+  <rect width="512" height="512" rx="116" fill="#101820"/>
+  <circle cx="384" cy="112" r="94" fill="#75D0B4" opacity=".22"/>
+  <circle cx="112" cy="390" r="118" fill="#F3C969" opacity=".18"/>
+  <path fill="url(#bg)" d="M132 145h250v54L218 358h169v58H124v-55l164-158H132z"/>
+  <path fill="#101820" d="M352 240h42v42h-42v42h-44v-42h-42v-42h42v-42h44z"/>
+</svg>

@@ -1,0 +1,120 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <meta name="theme-color" content="#101820">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-title" content="Zetamac Lite">
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+  <title>Zetamac Lite</title>
+  <link rel="manifest" href="./manifest.json">
+  <link rel="apple-touch-icon" href="./icons/icon-180.png">
+  <link rel="stylesheet" href="./styles.css">
+</head>
+<body>
+  <main class="app-shell">
+    <section id="start-screen" class="screen start-screen">
+      <p class="eyebrow">Zetamac Lite</p>
+      <h1>Fast arithmetic. Big thumbs. No backend.</h1>
+      <p class="lede">
+        A static, offline-friendly score trainer for forward addition, subtraction,
+        multiplication, and division.
+      </p>
+
+      <section class="card">
+        <h2>Duration</h2>
+        <div class="segmented" role="radiogroup" aria-label="Duration">
+          <button class="segment active" type="button" data-duration="30">30s</button>
+          <button class="segment" type="button" data-duration="60">60s</button>
+          <button class="segment" type="button" data-duration="120">120s</button>
+        </div>
+      </section>
+
+      <section class="card">
+        <h2>Operations</h2>
+        <div class="operation-grid">
+          <label><input type="checkbox" data-operation="addition" checked> Addition</label>
+          <label><input type="checkbox" data-operation="subtraction" checked> Subtraction</label>
+          <label><input type="checkbox" data-operation="multiplication" checked> Multiplication</label>
+          <label><input type="checkbox" data-operation="division" checked> Division</label>
+        </div>
+      </section>
+
+      <button id="start-button" class="start-button" type="button">Start Run</button>
+      <p id="best-score" class="best-score">Best score: 0</p>
+    </section>
+
+    <section id="game-screen" class="screen game-screen hidden" aria-live="polite">
+      <header class="hud">
+        <div>
+          <span>Time</span>
+          <strong id="time-display">02:00</strong>
+        </div>
+        <div>
+          <span>Score</span>
+          <strong id="score-display">0</strong>
+        </div>
+        <div>
+          <span>Streak</span>
+          <strong id="streak-display">0</strong>
+        </div>
+      </header>
+
+      <section class="problem-card">
+        <p id="problem-display" class="problem">18 × 7</p>
+        <div id="answer-display" class="answer-display" aria-label="Current answer">0</div>
+        <p id="feedback" class="feedback">Type or tap your answer.</p>
+      </section>
+
+      <section class="keypad" aria-label="Numeric keypad">
+        <button type="button" data-key="7">7</button>
+        <button type="button" data-key="8">8</button>
+        <button type="button" data-key="9">9</button>
+        <button type="button" class="utility" data-action="backspace">Back</button>
+        <button type="button" data-key="4">4</button>
+        <button type="button" data-key="5">5</button>
+        <button type="button" data-key="6">6</button>
+        <button type="button" class="utility" data-action="clear">Clear</button>
+        <button type="button" data-key="1">1</button>
+        <button type="button" data-key="2">2</button>
+        <button type="button" data-key="3">3</button>
+        <button type="button" class="utility" data-key="-">-</button>
+        <button type="button" data-key=".">.</button>
+        <button type="button" data-key="0">0</button>
+        <button type="button" class="submit" data-action="submit">Submit</button>
+      </section>
+    </section>
+
+    <section id="results-screen" class="screen results-screen hidden">
+      <p class="eyebrow">Run complete</p>
+      <h1 id="result-score">0</h1>
+      <p id="result-copy" class="lede">Nice run.</p>
+      <div class="result-grid">
+        <article>
+          <span>Correct</span>
+          <strong id="result-correct">0</strong>
+        </article>
+        <article>
+          <span>Misses</span>
+          <strong id="result-misses">0</strong>
+        </article>
+        <article>
+          <span>Best streak</span>
+          <strong id="result-best-streak">0</strong>
+        </article>
+        <article>
+          <span>Duration</span>
+          <strong id="result-duration">120s</strong>
+        </article>
+      </div>
+      <div class="results-actions">
+        <button id="again-button" class="start-button" type="button">Run It Back</button>
+        <button id="settings-button" class="secondary-button" type="button">Settings</button>
+      </div>
+    </section>
+  </main>
+
+  <script src="./app.js"></script>
+</body>
+</html>

@@ -1,0 +1,365 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Mental Arithmetic Speed Trainer</title>
+  <link rel="stylesheet" href="/static/styles.css">
+</head>
+<body>
+  <main class="shell">
+    <section id="start-screen" class="panel panel-wide">
+      <p class="eyebrow">Arithmetic Speed Trainer</p>
+      <h1>Mental Math Speed Trainer</h1>
+      <p class="intro">
+        A minimal local arithmetic speed trainer with an interview-style arithmetic mode,
+        a practice mode, a Zetamac-inspired drill mode, and a Zetamac optimization mode.
+      </p>
+      <div class="control-grid">
+        <fieldset class="control mode-control">
+          <span>Mode</span>
+          <div class="mode-selector" role="radiogroup" aria-label="Mode">
+            <label class="mode-option">
+              <input type="radio" name="mode" value="assessment" checked>
+              <span>Interview Mode</span>
+            </label>
+            <label class="mode-option">
+              <input type="radio" name="mode" value="training">
+              <span>Practice Mode</span>
+            </label>
+            <label class="mode-option">
+              <input type="radio" name="mode" value="zetamac">
+              <span>Zetamac Mode</span>
+            </label>
+            <label class="mode-option">
+              <input type="radio" name="mode" value="zetamac_optimization">
+              <span>Zetamac Optimization</span>
+            </label>
+          </div>
+        </fieldset>
+        <label id="preset-control" class="control">
+          <span>Preset</span>
+          <select id="preset-select">
+            <option value="interview_default" selected>Interview Default</option>
+            <option value="interview_balanced">Interview Balanced</option>
+          </select>
+        </label>
+      </div>
+      <div class="control-grid adaptive-control-grid">
+        <label class="control">
+          <span>Adaptive Difficulty</span>
+          <select id="adaptive-enabled">
+            <option value="off" selected>Off</option>
+            <option value="on">On</option>
+          </select>
+        </label>
+        <label id="target-pace-control" class="control adaptive-detail hidden">
+          <span>Target Pace (seconds)</span>
+          <input
+            id="target-pace"
+            class="adaptive-input"
+            type="number"
+            min="2"
+            max="6"
+            step="0.1"
+            value="2.0"
+            inputmode="decimal"
+            placeholder="2.0-6.0"
+          >
+        </label>
+        <label id="initial-difficulty-control" class="control adaptive-detail hidden">
+          <span>Initial Difficulty</span>
+          <input
+            id="initial-difficulty"
+            class="adaptive-input"
+            type="number"
+            min="0"
+            max="100"
+            step="1"
+            value="40"
+            inputmode="numeric"
+            placeholder="0-100"
+          >
+        </label>
+      </div>
+      <div id="gameplay-settings" class="control-grid gameplay-control-grid">
+        <label id="auto-advance-control" class="control toggle-control">
+          <span>Auto-Advance On Correct</span>
+          <span class="toggle-copy">Submit and move on as soon as the typed answer is correct.</span>
+          <span class="toggle-switch">
+            <input id="auto-advance-on-correct" type="checkbox">
+            <span>Enable</span>
+          </span>
+        </label>
+        <label id="wrong-penalty-control" class="control toggle-control">
+          <span>Wrong-Answer Penalty</span>
+          <span id="wrong-penalty-copy" class="toggle-copy">Flash red and briefly pause after a wrong answer.</span>
+          <span class="toggle-switch">
+            <input id="wrong-answer-penalty" type="checkbox">
+            <span>Enable</span>
+          </span>
+        </label>
+        <label id="on-screen-keypad-control" class="control toggle-control">
+          <span>On-Screen Keypad</span>
+          <span class="toggle-copy">Large touch buttons for typed-answer runs.</span>
+          <span class="toggle-switch">
+            <input id="on-screen-keypad" type="checkbox">
+            <span>Enable</span>
+          </span>
+        </label>
+      </div>
+      <section id="zetamac-settings" class="zetamac-panel hidden">
+        <div class="control-grid">
+          <label class="control">
+            <span>Duration</span>
+            <select id="zetamac-duration">
+              <option value="30">30 seconds</option>
+              <option value="60">60 seconds</option>
+              <option value="120" selected>120 seconds</option>
+              <option value="300">300 seconds</option>
+              <option value="600">600 seconds</option>
+            </select>
+          </label>
+        </div>
+        <div class="zetamac-grid">
+          <div class="zetamac-row">
+            <label class="zetamac-toggle"><input id="zetamac-addition-enabled" type="checkbox" checked> Addition</label>
+            <div class="range-grid">
+              <input id="zetamac-addition-left-min" type="number" value="10">
+              <input id="zetamac-addition-left-max" type="number" value="99">
+              <input id="zetamac-addition-right-min" type="number" value="10">
+              <input id="zetamac-addition-right-max" type="number" value="99">
+            </div>
+          </div>
+          <div class="zetamac-row">
+            <label class="zetamac-toggle"><input id="zetamac-subtraction-enabled" type="checkbox" checked> Subtraction</label>
+            <div class="range-grid">
+              <input id="zetamac-subtraction-left-min" type="number" value="10">
+              <input id="zetamac-subtraction-left-max" type="number" value="99">
+              <input id="zetamac-subtraction-right-min" type="number" value="10">
+              <input id="zetamac-subtraction-right-max" type="number" value="99">
+            </div>
+          </div>
+          <div class="zetamac-row">
+            <label class="zetamac-toggle"><input id="zetamac-multiplication-enabled" type="checkbox" checked> Multiplication</label>
+            <div class="range-grid">
+              <input id="zetamac-multiplication-left-min" type="number" value="2">
+              <input id="zetamac-multiplication-left-max" type="number" value="12">
+              <input id="zetamac-multiplication-right-min" type="number" value="2">
+              <input id="zetamac-multiplication-right-max" type="number" value="12">
+            </div>
+          </div>
+          <div class="zetamac-row">
+            <label class="zetamac-toggle"><input id="zetamac-division-enabled" type="checkbox" checked> Division</label>
+            <div class="range-grid">
+              <input id="zetamac-division-left-min" type="number" value="2">
+              <input id="zetamac-division-left-max" type="number" value="12">
+              <input id="zetamac-division-right-min" type="number" value="2">
+              <input id="zetamac-division-right-max" type="number" value="12">
+            </div>
+          </div>
+        </div>
+      </section>
+      <div class="start-actions">
+        <button id="start-button" class="primary-button">Start</button>
+        <button class="secondary-button history-panel-button" type="button">History</button>
+        <button class="secondary-button export-history-button" type="button">Export History</button>
+      </div>
+      <p class="small-note">
+        Practice Mode keeps the existing optional multiple-choice flow. Zetamac Mode is a local
+        practice implementation with typed whole-number answers, continuous timing, and adjustable ranges.
+        Zetamac Optimization is a forward-only score-training preset that reuses weakness artefacts when available.
+      </p>
+    </section>
+
+    <section id="game-screen" class="panel hidden">
+      <div id="penalty-overlay" class="penalty-overlay hidden" aria-hidden="true"></div>
+      <div class="run-meta">
+        <span id="mode-badge" class="mode-badge">Interview Mode</span>
+        <span id="preset-badge" class="mode-badge muted-badge">Interview Default</span>
+        <button id="exit-run-button" class="secondary-button exit-button" type="button">Exit Run</button>
+      </div>
+      <header class="status-bar">
+        <div>
+          <span class="status-label">Time</span>
+          <strong id="time-remaining">08:00</strong>
+        </div>
+        <div>
+          <span id="secondary-label" class="status-label">Question</span>
+          <strong id="secondary-value">1 / 80</strong>
+        </div>
+        <div>
+          <span class="status-label">Score</span>
+          <strong id="current-score">0</strong>
+        </div>
+      </header>
+
+      <div class="question-wrap">
+        <p id="prompt" class="prompt">17 + 28</p>
+        <form id="answer-form" class="answer-form hidden">
+          <input
+            id="answer-input"
+            class="answer-input"
+            type="text"
+            inputmode="decimal"
+            autocomplete="off"
+            autocapitalize="off"
+            spellcheck="false"
+            placeholder="Type answer"
+          >
+          <button id="submit-answer" class="primary-button submit-button" type="submit">Submit</button>
+        </form>
+        <p id="status-message" class="status-message hidden" aria-live="polite"></p>
+        <div id="options" class="options-grid hidden"></div>
+        <div id="on-screen-keypad-panel" class="keypad hidden" aria-label="On-screen numeric keypad">
+          <button type="button" class="keypad-button" data-keypad-value="7">7</button>
+          <button type="button" class="keypad-button" data-keypad-value="8">8</button>
+          <button type="button" class="keypad-button" data-keypad-value="9">9</button>
+          <button type="button" class="keypad-button keypad-control" data-keypad-action="backspace">Back</button>
+          <button type="button" class="keypad-button" data-keypad-value="4">4</button>
+          <button type="button" class="keypad-button" data-keypad-value="5">5</button>
+          <button type="button" class="keypad-button" data-keypad-value="6">6</button>
+          <button type="button" class="keypad-button keypad-control" data-keypad-action="clear">Clear</button>
+          <button type="button" class="keypad-button" data-keypad-value="1">1</button>
+          <button type="button" class="keypad-button" data-keypad-value="2">2</button>
+          <button type="button" class="keypad-button" data-keypad-value="3">3</button>
+          <button type="button" class="keypad-button keypad-control" data-keypad-value="-">-</button>
+          <button type="button" class="keypad-button keypad-decimal" data-keypad-value=".">.</button>
+          <button type="button" class="keypad-button" data-keypad-value="0">0</button>
+          <button type="button" class="keypad-button keypad-submit" data-keypad-action="submit">Submit</button>
+        </div>
+      </div>
+
+      <footer id="typed-hint" class="hint-row hidden">
+        <span id="typed-hint-text">Press Enter to submit.</span>
+      </footer>
+      <footer id="training-hint" class="hint-row hidden">
+        <span>Use keys 1-4 or click an option.</span>
+        <span>No backtracking. The next question appears immediately after submission.</span>
+      </footer>
+    </section>
+
+    <section id="results-screen" class="panel panel-wide hidden">
+      <p class="eyebrow">Run complete</p>
+      <h2>Results</h2>
+      <div id="summary-grid" class="summary-grid"></div>
+
+      <section id="adaptive-results" class="results-block hidden">
+        <h3>Adaptive difficulty</h3>
+        <div id="adaptive-grid" class="summary-grid"></div>
+      </section>
+
+      <section class="results-block">
+        <h3>Operation breakdown</h3>
+        <div class="table-wrap">
+          <table>
+            <thead>
+              <tr>
+                <th>Operation</th>
+                <th>Attempted</th>
+                <th>Accuracy</th>
+                <th>Avg RT</th>
+              </tr>
+            </thead>
+            <tbody id="operation-body"></tbody>
+          </table>
+        </div>
+      </section>
+
+      <section class="results-block">
+        <h3>Question mix</h3>
+        <div class="table-wrap">
+          <table>
+            <thead>
+              <tr>
+                <th>Family</th>
+                <th>Shown</th>
+                <th>Score</th>
+                <th>Correct</th>
+                <th>Incorrect</th>
+                <th>Avg RT</th>
+              </tr>
+            </thead>
+            <tbody id="family-body"></tbody>
+          </table>
+        </div>
+      </section>
+
+      <section class="results-block">
+        <div class="results-header">
+          <h3>Leaderboard</h3>
+          <div class="results-actions">
+            <button class="secondary-button history-panel-button" type="button">History</button>
+            <button class="secondary-button export-history-button" type="button">Export History</button>
+            <button id="restart-button" class="secondary-button">Start another run</button>
+          </div>
+        </div>
+        <div class="table-wrap">
+          <table>
+            <thead>
+              <tr>
+                <th>Time</th>
+                <th>Mode</th>
+                <th>Score</th>
+                <th>Correct</th>
+                <th>Accuracy</th>
+                <th>Avg RT</th>
+              </tr>
+            </thead>
+            <tbody id="leaderboard-body"></tbody>
+          </table>
+        </div>
+      </section>
+
+      <section class="results-block">
+        <h3>Question history</h3>
+        <div class="table-wrap history-wrap">
+          <table>
+            <thead>
+              <tr>
+                <th>#</th>
+                <th>Prompt</th>
+                <th>Family</th>
+                <th>Selected</th>
+                <th>Correct</th>
+                <th>Result</th>
+                <th>RT</th>
+              </tr>
+            </thead>
+            <tbody id="history-body"></tbody>
+          </table>
+        </div>
+      </section>
+    </section>
+
+    <aside id="history-panel" class="history-panel hidden" aria-labelledby="history-panel-title">
+      <div class="history-panel-card">
+        <div class="history-panel-header">
+          <div>
+            <p class="eyebrow">Saved runs</p>
+            <h2 id="history-panel-title">History</h2>
+          </div>
+          <button id="history-panel-close" class="secondary-button" type="button">Close</button>
+        </div>
+        <p id="history-panel-status" class="small-note">Loading recent runs...</p>
+        <div class="table-wrap history-panel-table-wrap">
+          <table>
+            <thead>
+              <tr>
+                <th>Time</th>
+                <th>Mode</th>
+                <th>Score</th>
+                <th>Accuracy</th>
+                <th>Avg RT</th>
+              </tr>
+            </thead>
+            <tbody id="recent-history-body"></tbody>
+          </table>
+        </div>
+      </div>
+    </aside>
+  </main>
+
+  <script src="/static/app.js"></script>
+</body>
+</html>
